@@ -212,7 +212,7 @@ export function isInRoomCall(): boolean {
   return session !== null;
 }
 
-export async function startPresenting() {
+export async function startPresenting(source: "camera" | "screen" = "camera") {
   if (!session) return;
   const now = Date.now();
   const freeIndex = ([0, 1] as const).find((i) => session!.slots.isFree(i, now));
@@ -221,15 +221,44 @@ export async function startPresenting() {
     return;
   }
 
-  const claim = session.slots.buildClaim(freeIndex, session.self.identityId, "camera", now);
-  if (!claim) return;
+  // Acquire media BEFORE claiming the slot: the screen picker can be cancelled,
+  // and camera/screen permission can be denied — we don't want to hold a slot
+  // for media we never got.
+  let videoTrack: MediaStreamTrack;
+  try {
+    const stream =
+      source === "screen"
+        ? await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 15 } },
+            audio: false,
+          })
+        : await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
+    videoTrack = stream.getVideoTracks()[0];
+  } catch (err) {
+    const name = (err as Error)?.name;
+    useRoomCallStore
+      .getState()
+      ._setPresentError(
+        source === "screen"
+          ? name === "NotAllowedError"
+            ? "Screen share was cancelled or blocked. On macOS, grant Screen Recording to Haven in System Settings ▸ Privacy & Security."
+            : `Screen share isn't available: ${name ?? "unknown error"}.`
+          : "Couldn't access the camera.",
+      );
+    return;
+  }
+
+  const claim = session.slots.buildClaim(freeIndex, session.self.identityId, source, now);
+  if (!claim) {
+    videoTrack.stop();
+    return;
+  }
   broadcast({ ...claim, roomId: session.roomId } satisfies SlotClaimMessage);
   pushSlotsToStore();
 
   try {
-    const videoStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
-    const videoTrack = videoStream.getVideoTracks()[0];
     session.videoTrack = videoTrack;
+    // Fires when the user clicks the OS/browser "Stop sharing" control.
     videoTrack.onended = () => stopPresenting();
 
     // Add our video to every existing mesh connection (each renegotiates).
@@ -239,9 +268,8 @@ export async function startPresenting() {
     useRoomCallStore.getState()._setPresenting(true);
     useRoomCallStore.getState()._setLocalStream(session.localStream);
   } catch {
-    // Couldn't get the camera — release the slot we optimistically claimed.
     stopPresenting();
-    useRoomCallStore.getState()._setPresentError("Couldn't access the camera.");
+    useRoomCallStore.getState()._setPresentError("Couldn't start presenting.");
   }
 }
 

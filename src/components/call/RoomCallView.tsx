@@ -112,14 +112,24 @@ export function RoomCallView() {
             Stop presenting
           </button>
         ) : (
-          <button
-            onClick={startPresenting}
-            disabled={slotsFull}
-            title={slotsFull ? "Both presenter slots are taken" : "Share your camera"}
-            className="rounded-full bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Present
-          </button>
+          <>
+            <button
+              onClick={() => startPresenting("camera")}
+              disabled={slotsFull}
+              title={slotsFull ? "Both presenter slots are taken" : "Share your camera"}
+              className="rounded-full bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Present
+            </button>
+            <button
+              onClick={() => startPresenting("screen")}
+              disabled={slotsFull}
+              title={slotsFull ? "Both presenter slots are taken" : "Share your screen"}
+              className="rounded-full bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Share screen
+            </button>
+          </>
         )}
         <button
           onClick={leave}

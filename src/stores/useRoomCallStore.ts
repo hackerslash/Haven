@@ -21,7 +21,7 @@ type RoomCallState = {
   join: (roomId: string) => Promise<void>;
   leave: () => void;
   toggleMic: () => void;
-  startPresenting: () => Promise<void>;
+  startPresenting: (source?: "camera" | "screen") => Promise<void>;
   stopPresenting: () => void;
 
   _setSession: (roomId: string) => void;
@@ -63,7 +63,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   },
   leave: () => roomCallService.leaveRoomCall(),
   toggleMic: () => roomCallService.toggleMic(),
-  startPresenting: () => roomCallService.startPresenting(),
+  startPresenting: (source = "camera") => roomCallService.startPresenting(source),
   stopPresenting: () => roomCallService.stopPresenting(),
 
   _setSession: (roomId) => set({ roomId, presentError: null }),

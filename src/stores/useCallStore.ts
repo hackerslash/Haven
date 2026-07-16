@@ -18,6 +18,8 @@ type CallState = {
   remoteStream: MediaStream | null;
   micOn: boolean;
   camOn: boolean;
+  screenOn: boolean;
+  screenError: string | null;
   connectionState: RTCPeerConnectionState;
   quality: ConnectionQuality;
 
@@ -28,6 +30,7 @@ type CallState = {
   hangUp: () => void;
   toggleMic: () => void;
   toggleCam: () => void;
+  toggleScreenShare: () => Promise<void>;
 
   // Internal setters, driven by callService (prefixed _ by convention).
   _setActiveCall: (call: ActiveCall) => void;
@@ -35,6 +38,8 @@ type CallState = {
   _setLocalStream: (stream: MediaStream | null) => void;
   _setRemoteStream: (stream: MediaStream | null) => void;
   _setMediaFlags: (micOn: boolean, camOn: boolean) => void;
+  _setScreenOn: (on: boolean) => void;
+  _setScreenError: (error: string | null) => void;
   _setConnectionState: (state: RTCPeerConnectionState) => void;
   _setQuality: (quality: ConnectionQuality) => void;
   _clear: () => void;
@@ -52,6 +57,8 @@ export const useCallStore = create<CallState>((set) => ({
   remoteStream: null,
   micOn: true,
   camOn: false,
+  screenOn: false,
+  screenError: null,
   connectionState: "new",
   quality: "unknown",
 
@@ -62,6 +69,10 @@ export const useCallStore = create<CallState>((set) => ({
   hangUp: () => callService.hangUp(),
   toggleMic: () => callService.toggleMic(),
   toggleCam: () => callService.toggleCam(),
+  toggleScreenShare: async () => {
+    if (useCallStore.getState().screenOn) await callService.stopScreenShare();
+    else await callService.startScreenShare();
+  },
 
   _setActiveCall: (call) => set({ activeCall: call }),
   _setStatus: (status) =>
@@ -69,6 +80,8 @@ export const useCallStore = create<CallState>((set) => ({
   _setLocalStream: (stream) => set({ localStream: stream }),
   _setRemoteStream: (stream) => set({ remoteStream: stream }),
   _setMediaFlags: (micOn, camOn) => set({ micOn, camOn }),
+  _setScreenOn: (on) => set({ screenOn: on }),
+  _setScreenError: (error) => set({ screenError: error }),
   _setConnectionState: (connectionState) => set({ connectionState }),
   _setQuality: (quality) => set({ quality }),
   _clear: () =>
@@ -78,6 +91,8 @@ export const useCallStore = create<CallState>((set) => ({
       remoteStream: null,
       micOn: true,
       camOn: false,
+      screenOn: false,
+      screenError: null,
       connectionState: "new",
       quality: "unknown",
     }),

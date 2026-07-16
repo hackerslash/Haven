@@ -13,6 +13,8 @@ export function CallOverlay() {
   const remoteStream = useCallStore((s) => s.remoteStream);
   const micOn = useCallStore((s) => s.micOn);
   const camOn = useCallStore((s) => s.camOn);
+  const screenOn = useCallStore((s) => s.screenOn);
+  const screenError = useCallStore((s) => s.screenError);
   const connectionState = useCallStore((s) => s.connectionState);
   const quality = useCallStore((s) => s.quality);
 
@@ -21,6 +23,7 @@ export function CallOverlay() {
   const hangUp = useCallStore((s) => s.hangUp);
   const toggleMic = useCallStore((s) => s.toggleMic);
   const toggleCam = useCallStore((s) => s.toggleCam);
+  const toggleScreenShare = useCallStore((s) => s.toggleScreenShare);
 
   const remoteName = useRemoteName(activeCall?.remoteId);
 
@@ -91,6 +94,11 @@ export function CallOverlay() {
           Connection interrupted — trying to reconnect…
         </div>
       )}
+      {screenError && (
+        <div className="bg-danger/15 px-6 py-1.5 text-center text-xs text-danger" role="alert">
+          {screenError}
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-auto p-6 md:grid-cols-2">
         <VideoTile
@@ -100,10 +108,10 @@ export function CallOverlay() {
         />
         <VideoTile
           stream={localStream}
-          label="You"
+          label={screenOn ? "You (screen)" : "You"}
           muted
-          mirror
-          hasVideo={camOn && (localStream?.getVideoTracks().length ?? 0) > 0}
+          mirror={!screenOn}
+          hasVideo={(camOn || screenOn) && (localStream?.getVideoTracks().length ?? 0) > 0}
         />
       </div>
 
@@ -125,6 +133,15 @@ export function CallOverlay() {
           }`}
         >
           {camOn ? "Stop video" : "Start video"}
+        </button>
+        <button
+          onClick={() => void toggleScreenShare()}
+          aria-pressed={screenOn}
+          className={`rounded-full px-4 py-2 text-sm font-medium ${
+            screenOn ? "bg-accent text-white" : "bg-bg-tertiary text-text-primary"
+          }`}
+        >
+          {screenOn ? "Stop sharing" : "Share screen"}
         </button>
         <button
           onClick={hangUp}

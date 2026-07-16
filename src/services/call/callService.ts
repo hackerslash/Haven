@@ -30,6 +30,7 @@ type CallContext = {
   roomId: string;
   wrapper: PeerConnectionWrapper | null;
   localStream: MediaStream | null;
+  screenStream: MediaStream | null;
 };
 
 let ctx: CallContext | null = null;
@@ -92,7 +93,7 @@ function attachLocalTracks() {
 export async function startCall(self: Identity, roomId: string, remoteId: string, withVideo: boolean) {
   if (ctx) return;
   const localStream = await acquireLocalMedia(withVideo);
-  ctx = { self, remoteId, roomId, wrapper: null, localStream };
+  ctx = { self, remoteId, roomId, wrapper: null, localStream, screenStream: null };
 
   const store = useCallStore.getState();
   store._setActiveCall({ roomId, remoteId, status: "outgoing" });
@@ -112,7 +113,7 @@ export async function acceptCall(self: Identity) {
   if (!active || active.status !== "incoming") return;
 
   const localStream = await acquireLocalMedia(true);
-  ctx = { self, remoteId: active.remoteId, roomId: active.roomId, wrapper: null, localStream };
+  ctx = { self, remoteId: active.remoteId, roomId: active.roomId, wrapper: null, localStream, screenStream: null };
   ctx.wrapper = buildWrapper(self, active.remoteId);
   attachLocalTracks();
 
@@ -152,9 +153,59 @@ export function hangUp() {
 
 function endCallLocal() {
   ctx?.localStream?.getTracks().forEach((t) => t.stop());
+  ctx?.screenStream?.getTracks().forEach((t) => t.stop());
   ctx?.wrapper?.close();
   ctx = null;
   useCallStore.getState()._clear();
+}
+
+export async function startScreenShare() {
+  if (!ctx?.wrapper) return;
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 15 } },
+      audio: false,
+    });
+  } catch (err) {
+    const name = (err as Error)?.name;
+    useCallStore
+      .getState()
+      ._setScreenError(
+        name === "NotAllowedError"
+          ? "Screen share was cancelled or blocked. On macOS, grant Screen Recording to Haven in System Settings ▸ Privacy & Security."
+          : `Screen share isn't available: ${name ?? "unknown error"}.`,
+      );
+    return;
+  }
+  const track = stream.getVideoTracks()[0];
+  ctx.screenStream = stream;
+
+  // Replace the outgoing video (camera) if there is one, else add a new track
+  // (which renegotiates — handled by perfect negotiation).
+  const sender = ctx.wrapper.pc.getSenders().find((s) => s.track?.kind === "video");
+  if (sender) await sender.replaceTrack(track);
+  else ctx.wrapper.addTrack(track, stream);
+
+  track.onended = () => void stopScreenShare();
+  const store = useCallStore.getState();
+  store._setScreenError(null);
+  store._setScreenOn(true);
+  store._setLocalStream(stream); // preview the shared screen locally
+}
+
+export async function stopScreenShare() {
+  if (!ctx) return;
+  ctx.screenStream?.getTracks().forEach((t) => t.stop());
+  ctx.screenStream = null;
+
+  // Revert the video sender to the camera track if the camera is on, else
+  // send nothing (replaceTrack(null) keeps the transceiver without media).
+  const store = useCallStore.getState();
+  const camTrack = store.camOn ? (ctx.localStream?.getVideoTracks()[0] ?? null) : null;
+  await ctx.wrapper?.replaceVideoTrack(camTrack);
+  store._setScreenOn(false);
+  store._setLocalStream(ctx.localStream); // back to the camera/mic stream
 }
 
 export function toggleMic() {
