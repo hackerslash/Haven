@@ -14,6 +14,7 @@ export function CallOverlay() {
   const micOn = useCallStore((s) => s.micOn);
   const camOn = useCallStore((s) => s.camOn);
   const connectionState = useCallStore((s) => s.connectionState);
+  const quality = useCallStore((s) => s.quality);
 
   const acceptCall = useCallStore((s) => s.acceptCall);
   const declineCall = useCallStore((s) => s.declineCall);
@@ -50,25 +51,46 @@ export function CallOverlay() {
     );
   }
 
+  const reconnecting =
+    activeCall.status === "active" &&
+    (connectionState === "disconnected" || connectionState === "failed");
+
   const statusLabel =
     activeCall.status === "outgoing"
       ? "Calling…"
       : activeCall.status === "connecting"
         ? "Connecting…"
-        : connectionState === "connected"
-          ? "Connected"
-          : connectionState;
+        : reconnecting
+          ? "Reconnecting…"
+          : connectionState === "connected"
+            ? "Connected"
+            : connectionState;
+
+  const QUALITY_DOT: Record<string, string> = {
+    good: "bg-success",
+    fair: "bg-warning",
+    poor: "bg-danger",
+    unknown: "bg-text-secondary",
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary">
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <div>
           <p className="font-semibold text-text-primary">{remoteName}</p>
-          <p className="text-xs text-text-secondary" role="status" aria-live="polite">
+          <p className="flex items-center gap-1.5 text-xs text-text-secondary" role="status" aria-live="polite">
+            {activeCall.status === "active" && !reconnecting && (
+              <span className={`h-2 w-2 rounded-full ${QUALITY_DOT[quality]}`} aria-hidden="true" />
+            )}
             {statusLabel}
           </p>
         </div>
       </header>
+      {reconnecting && (
+        <div className="bg-warning/15 px-6 py-1.5 text-center text-xs text-warning" role="status">
+          Connection interrupted — trying to reconnect…
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-auto p-6 md:grid-cols-2">
         <VideoTile

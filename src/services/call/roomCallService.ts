@@ -90,9 +90,13 @@ function ensureWrapper(remoteId: string): PeerConnectionWrapper {
       } satisfies RtcCandidateMessage),
     onRemoteStream: (stream) =>
       useRoomCallStore.getState()._setParticipantStream(remoteId, stream),
+    onQuality: (quality) =>
+      useRoomCallStore.getState()._setParticipantQuality(remoteId, quality),
     onConnectionStateChange: (state) => {
       useRoomCallStore.getState()._setParticipantConnection(remoteId, state);
-      if (state === "closed" || state === "failed") removePeer(remoteId);
+      // "failed" gets a chance to ICE-restart; only a fully closed connection
+      // removes the peer from the mesh.
+      if (state === "closed") removePeer(remoteId);
     },
   });
 

@@ -5,6 +5,7 @@ import { derivePeerId } from "../peer/derivePeerId";
 import * as rosterService from "../roster/rosterService";
 import * as rosterRepo from "../db/rosterRepo";
 import * as roomRepo from "../db/roomRepo";
+import * as roomMembersRepo from "../db/roomMembersRepo";
 import * as chatService from "../room/chatService";
 import * as roomService from "../room/roomService";
 import * as callService from "../call/callService";
@@ -28,6 +29,11 @@ async function syncDmWith(self: Identity, contactId: string, peerId: string) {
   await roomRepo.ensureDmRoom(roomId, self.identityId, Date.now());
   await useRoomStore.getState().loadRooms();
   await chatService.requestRoomSync(roomId, peerId);
+
+  // Backfill any group rooms we share with this peer too, so messages sent
+  // while either side was offline converge on reconnect.
+  const groupRooms = await roomMembersRepo.sharedGroupRoomIds(contactId);
+  for (const gid of groupRooms) await chatService.requestRoomSync(gid, peerId);
 }
 
 /** Starts this device's PeerJS registration, wires its events into the roster

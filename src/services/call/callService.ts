@@ -70,13 +70,14 @@ function buildWrapper(self: Identity, remoteId: string): PeerConnectionWrapper {
         candidate,
       } satisfies RtcCandidateMessage),
     onRemoteStream: (stream) => useCallStore.getState()._setRemoteStream(stream),
+    onQuality: (quality) => useCallStore.getState()._setQuality(quality),
     onConnectionStateChange: (state) => {
       useCallStore.getState()._setConnectionState(state);
       if (state === "connected") useCallStore.getState()._setStatus("active");
-      if (state === "failed" || state === "closed") {
-        // Phase 5 adds ICE restart before giving up; for now, end the call.
-        if (ctx) endCallLocal();
-      }
+      // Don't hang up on "disconnected"/"failed" — the wrapper's ICE-restart
+      // layer tries to recover, and the UI shows a reconnecting state. Only a
+      // fully closed connection (explicit teardown) ends the call here.
+      if (state === "closed" && ctx) endCallLocal();
     },
   });
 }

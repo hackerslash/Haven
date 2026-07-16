@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Identity } from "../types/domain";
 import type { PresenterSlotWire } from "../types/wire";
+import type { ConnectionQuality } from "../services/call/PeerConnectionWrapper";
 import * as roomCallService from "../services/call/roomCallService";
 import * as roomMembersRepo from "../services/db/roomMembersRepo";
 import { useIdentityStore } from "./useIdentityStore";
@@ -11,6 +12,7 @@ type RoomCallState = {
   slots: PresenterSlotWire[];
   streamsByParticipant: Record<string, MediaStream>;
   connectionByParticipant: Record<string, RTCPeerConnectionState>;
+  qualityByParticipant: Record<string, ConnectionQuality>;
   localStream: MediaStream | null;
   micOn: boolean;
   presenting: boolean;
@@ -28,6 +30,7 @@ type RoomCallState = {
   _setSlots: (slots: PresenterSlotWire[]) => void;
   _setParticipantStream: (id: string, stream: MediaStream) => void;
   _setParticipantConnection: (id: string, state: RTCPeerConnectionState) => void;
+  _setParticipantQuality: (id: string, quality: ConnectionQuality) => void;
   _setLocalStream: (stream: MediaStream | null) => void;
   _setMicOn: (on: boolean) => void;
   _setPresenting: (on: boolean) => void;
@@ -47,6 +50,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   slots: [],
   streamsByParticipant: {},
   connectionByParticipant: {},
+  qualityByParticipant: {},
   localStream: null,
   micOn: true,
   presenting: false,
@@ -68,12 +72,15 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
     set((s) => {
       const streams = { ...s.streamsByParticipant };
       const conns = { ...s.connectionByParticipant };
+      const quals = { ...s.qualityByParticipant };
       delete streams[id];
       delete conns[id];
+      delete quals[id];
       return {
         participants: s.participants.filter((p) => p !== id),
         streamsByParticipant: streams,
         connectionByParticipant: conns,
+        qualityByParticipant: quals,
       };
     }),
   _setSlots: (slots) => set({ slots }),
@@ -81,6 +88,8 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
     set((s) => ({ streamsByParticipant: { ...s.streamsByParticipant, [id]: stream } })),
   _setParticipantConnection: (id, state) =>
     set((s) => ({ connectionByParticipant: { ...s.connectionByParticipant, [id]: state } })),
+  _setParticipantQuality: (id, quality) =>
+    set((s) => ({ qualityByParticipant: { ...s.qualityByParticipant, [id]: quality } })),
   _setLocalStream: (stream) => set({ localStream: stream }),
   _setMicOn: (on) => set({ micOn: on }),
   _setPresenting: (on) => set({ presenting: on }),
@@ -92,6 +101,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       slots: [],
       streamsByParticipant: {},
       connectionByParticipant: {},
+      qualityByParticipant: {},
       localStream: null,
       micOn: true,
       presenting: false,

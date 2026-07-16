@@ -15,6 +15,7 @@ export function RoomCallView() {
   const participants = useRoomCallStore((s) => s.participants);
   const slots = useRoomCallStore((s) => s.slots);
   const streamsByParticipant = useRoomCallStore((s) => s.streamsByParticipant);
+  const qualityByParticipant = useRoomCallStore((s) => s.qualityByParticipant);
   const localStream = useRoomCallStore((s) => s.localStream);
   const micOn = useRoomCallStore((s) => s.micOn);
   const presenting = useRoomCallStore((s) => s.presenting);
@@ -32,6 +33,17 @@ export function RoomCallView() {
   function streamFor(id: string): MediaStream | null {
     if (id === self?.identityId) return localStream;
     return streamsByParticipant[id] ?? null;
+  }
+
+  const QUALITY_DOT: Record<string, string> = {
+    good: "bg-success",
+    fair: "bg-warning",
+    poor: "bg-danger",
+    unknown: "bg-text-secondary",
+  };
+  function dotFor(id: string): string {
+    if (id === self?.identityId) return "bg-success";
+    return QUALITY_DOT[qualityByParticipant[id] ?? "unknown"];
   }
 
   return (
@@ -65,7 +77,7 @@ export function RoomCallView() {
             key={id}
             className="flex shrink-0 items-center gap-2 rounded-lg bg-bg-secondary px-3 py-1.5"
           >
-            <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
+            <span className={`h-2 w-2 rounded-full ${dotFor(id)}`} aria-hidden="true" />
             <span className="text-xs text-text-primary">{nameOf(id)}</span>
             {presenterIds.includes(id) && (
               <span className="rounded bg-accent px-1 text-[10px] font-medium text-white">

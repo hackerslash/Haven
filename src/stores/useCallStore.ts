@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Identity } from "../types/domain";
+import type { ConnectionQuality } from "../services/call/PeerConnectionWrapper";
 import * as callService from "../services/call/callService";
 import { useIdentityStore } from "./useIdentityStore";
 
@@ -18,6 +19,7 @@ type CallState = {
   micOn: boolean;
   camOn: boolean;
   connectionState: RTCPeerConnectionState;
+  quality: ConnectionQuality;
 
   // User actions
   startCall: (roomId: string, remoteId: string, withVideo: boolean) => Promise<void>;
@@ -34,6 +36,7 @@ type CallState = {
   _setRemoteStream: (stream: MediaStream | null) => void;
   _setMediaFlags: (micOn: boolean, camOn: boolean) => void;
   _setConnectionState: (state: RTCPeerConnectionState) => void;
+  _setQuality: (quality: ConnectionQuality) => void;
   _clear: () => void;
 };
 
@@ -50,6 +53,7 @@ export const useCallStore = create<CallState>((set) => ({
   micOn: true,
   camOn: false,
   connectionState: "new",
+  quality: "unknown",
 
   startCall: (roomId, remoteId, withVideo) =>
     callService.startCall(requireSelf(), roomId, remoteId, withVideo),
@@ -66,6 +70,7 @@ export const useCallStore = create<CallState>((set) => ({
   _setRemoteStream: (stream) => set({ remoteStream: stream }),
   _setMediaFlags: (micOn, camOn) => set({ micOn, camOn }),
   _setConnectionState: (connectionState) => set({ connectionState }),
+  _setQuality: (quality) => set({ quality }),
   _clear: () =>
     set({
       activeCall: null,
@@ -74,5 +79,6 @@ export const useCallStore = create<CallState>((set) => ({
       micOn: true,
       camOn: false,
       connectionState: "new",
+      quality: "unknown",
     }),
 }));
