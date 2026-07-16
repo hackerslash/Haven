@@ -230,10 +230,25 @@ export async function startPresenting(source: "camera" | "screen" = "camera") {
       source === "screen"
         ? await navigator.mediaDevices.getDisplayMedia({
             video: { frameRate: { ideal: 15 } },
-            audio: false,
+            audio: true,
           })
         : await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
     videoTrack = stream.getVideoTracks()[0];
+
+    // If the screen picker returned device/tab audio tracks, add them to the
+    // local stream so they get forwarded to every peer in the mesh.
+    if (source === "screen" && session) {
+      for (const audioTrack of stream.getAudioTracks()) {
+        session.localStream.addTrack(audioTrack);
+        for (const wrapper of session.wrappers.values()) {
+          wrapper.addTrack(audioTrack, session.localStream);
+        }
+        // Stop the display-audio track when presentation ends.
+        audioTrack.onended = () => {
+          session?.localStream.removeTrack(audioTrack);
+        };
+      }
+    }
   } catch (err) {
     const name = (err as Error)?.name;
     useRoomCallStore

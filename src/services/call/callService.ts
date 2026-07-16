@@ -165,7 +165,7 @@ export async function startScreenShare() {
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: { ideal: 15 } },
-      audio: false,
+      audio: true,
     });
   } catch (err) {
     const name = (err as Error)?.name;
@@ -173,7 +173,7 @@ export async function startScreenShare() {
       .getState()
       ._setScreenError(
         name === "NotAllowedError"
-          ? "Screen share was cancelled or blocked. On macOS, grant Screen Recording to Haven in System Settings ▸ Privacy & Security."
+          ? "Screen share was cancelled or blocked. On macOS, grant Screen Recording to Haven in System Settings \u25b8 Privacy & Security."
           : `Screen share isn't available: ${name ?? "unknown error"}.`,
       );
     return;
@@ -186,6 +186,13 @@ export async function startScreenShare() {
   const sender = ctx.wrapper.pc.getSenders().find((s) => s.track?.kind === "video");
   if (sender) await sender.replaceTrack(track);
   else ctx.wrapper.addTrack(track, stream);
+
+  // Forward any audio the OS picker returned (tab audio, or system audio if
+  // the user ticked "Share audio" in the native screen picker — no extra
+  // software needed).
+  for (const audioTrack of stream.getAudioTracks()) {
+    ctx.wrapper.addTrack(audioTrack, stream);
+  }
 
   track.onended = () => void stopScreenShare();
   const store = useCallStore.getState();

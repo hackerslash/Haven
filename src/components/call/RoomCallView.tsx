@@ -30,6 +30,10 @@ export function RoomCallView() {
   const presenterIds = slots.map((s) => s.holderId).filter((id): id is string => id !== null);
   const slotsFull = presenterIds.length >= 2 && !presenting;
 
+  // The identity currently sharing their screen (if any) — used to make that
+  // tile large so it's immediately readable without manually going fullscreen.
+  const screenShareId = slots.find((s) => s.holderId !== null && s.source === "screen")?.holderId ?? null;
+
   function streamFor(id: string): MediaStream | null {
     if (id === self?.identityId) return localStream;
     return streamsByParticipant[id] ?? null;
@@ -46,26 +50,41 @@ export function RoomCallView() {
     return QUALITY_DOT[qualityByParticipant[id] ?? "unknown"];
   }
 
+  // Sort so the screen-share tile always comes first (gets the large slot).
+  const sortedPresenterIds = screenShareId
+    ? [screenShareId, ...presenterIds.filter((id) => id !== screenShareId)]
+    : presenterIds;
+
   return (
     <div className="flex flex-1 flex-col bg-bg-primary">
-      {/* Presenter stage — the up-to-2 active presenters */}
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-auto p-4 md:grid-cols-2">
-        {presenterIds.length === 0 && (
+      {/* Presenter stage */}
+      <div
+        className={`grid flex-1 gap-4 overflow-auto p-4 items-start ${
+          sortedPresenterIds.length <= 1
+            ? "grid-cols-1"
+            : screenShareId
+              ? "grid-cols-3" // screen share spans 2/3, camera spans 1/3
+              : "grid-cols-1 md:grid-cols-2"
+        }`}
+      >
+        {sortedPresenterIds.length === 0 && (
           <div className="col-span-full flex items-center justify-center text-sm text-text-secondary">
             No one is presenting. Click “Present” to share your camera.
           </div>
         )}
-        {presenterIds.map((id) => {
+        {sortedPresenterIds.map((id) => {
           const stream = streamFor(id);
+          const isScreen = id === screenShareId;
           return (
-            <VideoTile
-              key={id}
-              stream={stream}
-              muted={id === self?.identityId}
-              mirror={id === self?.identityId}
-              label={nameOf(id)}
-              hasVideo={(stream?.getVideoTracks().length ?? 0) > 0}
-            />
+            <div key={id} className={isScreen && sortedPresenterIds.length > 1 ? "col-span-2" : ""}>
+              <VideoTile
+                stream={stream}
+                muted={id === self?.identityId}
+                mirror={id === self?.identityId && !isScreen}
+                label={isScreen ? `${nameOf(id)} (screen)` : nameOf(id)}
+                hasVideo={(stream?.getVideoTracks().length ?? 0) > 0}
+              />
+            </div>
           );
         })}
       </div>
