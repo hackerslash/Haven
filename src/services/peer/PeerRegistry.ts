@@ -30,6 +30,9 @@ export class PeerRegistry {
   private connections = new Map<string, DataConnection>();
   private listeners = new Map<keyof PeerRegistryEvents, Set<Listener<any>>>();
   private readonly selfPeerId: string;
+  /** Peers we are currently dialing — prevents stacking multiple awaitOpen
+   * timers when discover() fires again before the first attempt resolves. */
+  private dialing = new Map<string, Promise<DataConnection>>();
 
   constructor(selfIdentityId: string) {
     this.selfPeerId = derivePeerId(selfIdentityId);
@@ -131,14 +134,25 @@ export class PeerRegistry {
 
   connect(peerId: string): Promise<DataConnection> {
     const existing = this.connections.get(peerId);
-    if (existing) {
-      return existing.open ? Promise.resolve(existing) : this.awaitOpen(existing);
-    }
+    if (existing?.open) return Promise.resolve(existing);
+
+    // Return the in-progress dial promise rather than stacking a new awaitOpen
+    // timeout. Without this, discover()'s 2 s interval would create a fresh
+    // 10 s timer on every tick while a connection is pending, causing a cascade
+    // of timeout rejections even when the connection eventually succeeds.
+    const inflight = this.dialing.get(peerId);
+    if (inflight) return inflight;
+
     if (!this.peer) return Promise.reject(new Error("peer registry not started"));
 
-    const conn = this.peer.connect(peerId, { reliable: true });
-    this.registerConnection(conn);
-    return this.awaitOpen(conn);
+    const conn = existing ?? this.peer.connect(peerId, { reliable: true });
+    if (!existing) this.registerConnection(conn);
+
+    const attempt = this.awaitOpen(conn).finally(() => {
+      this.dialing.delete(peerId);
+    });
+    this.dialing.set(peerId, attempt);
+    return attempt;
   }
 
   send(peerId: string, data: unknown): boolean {
