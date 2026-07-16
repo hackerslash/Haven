@@ -3,9 +3,11 @@ import { useIdentityStore } from "../../stores/useIdentityStore";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useRoomStore } from "../../stores/useRoomStore";
 import { initNetworkBridge } from "../../services/bridge/networkBridge";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type Selection } from "./Sidebar";
 import { HomeView } from "../invite/HomeView";
 import { ChatView } from "../chat/ChatView";
+import { GroupRoomView } from "../room/GroupRoomView";
+import { CreateGroupModal } from "../room/CreateGroupModal";
 import { CallOverlay } from "../call/CallOverlay";
 
 let bridgeStarted = false;
@@ -18,7 +20,8 @@ export function MainShell() {
   const self = useIdentityStore((s) => s.self);
   const loadRoster = useRosterStore((s) => s.loadRoster);
   const loadRooms = useRoomStore((s) => s.loadRooms);
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>({ kind: "home" });
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   useEffect(() => {
     void loadRoster();
@@ -34,9 +37,9 @@ export function MainShell() {
   return (
     <div className="flex h-full bg-bg-primary text-text-primary">
       <Sidebar
-        selectedContactId={selectedContactId}
-        onSelectHome={() => setSelectedContactId(null)}
-        onSelectContact={setSelectedContactId}
+        selection={selection}
+        onSelect={setSelection}
+        onCreateGroup={() => setCreatingGroup(true)}
       />
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border px-4 py-2">
@@ -47,8 +50,10 @@ export function MainShell() {
           </span>
         </header>
         <div className="flex flex-1 overflow-hidden">
-          {selectedContactId ? (
-            <ChatView key={selectedContactId} contactId={selectedContactId} />
+          {selection.kind === "dm" ? (
+            <ChatView key={selection.contactId} contactId={selection.contactId} />
+          ) : selection.kind === "group" ? (
+            <GroupRoomView key={selection.roomId} roomId={selection.roomId} />
           ) : (
             <div className="flex-1 overflow-y-auto">
               <HomeView />
@@ -56,6 +61,16 @@ export function MainShell() {
           )}
         </div>
       </div>
+
+      {creatingGroup && (
+        <CreateGroupModal
+          onClose={() => setCreatingGroup(false)}
+          onCreated={(roomId) => {
+            setCreatingGroup(false);
+            setSelection({ kind: "group", roomId });
+          }}
+        />
+      )}
       <CallOverlay />
     </div>
   );

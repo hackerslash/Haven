@@ -58,12 +58,14 @@ function buildWrapper(self: Identity, remoteId: string): PeerConnectionWrapper {
     onDescription: (description) =>
       sendToRemote(remoteId, {
         type: "rtc_description",
+        channel: "dm",
         fromId: self.identityId,
         description,
       } satisfies RtcDescriptionMessage),
     onCandidate: (candidate) =>
       sendToRemote(remoteId, {
         type: "rtc_candidate",
+        channel: "dm",
         fromId: self.identityId,
         candidate,
       } satisfies RtcCandidateMessage),

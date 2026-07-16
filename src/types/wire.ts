@@ -114,18 +114,99 @@ export type CallHangupMessage = {
 };
 
 // --- Perfect-negotiation signaling (SDP + ICE), relayed over the PeerJS
-// data connection. `sdp` carries an RTCSessionDescriptionInit (offer/answer). ---
+// data connection. `channel` says which session the message belongs to so a
+// 1:1 ring call and a group room mesh never cross-talk: "dm" routes to the
+// 1:1 callService, a roomId string routes to that room's mesh session. ---
+
+export type SignalChannel = "dm" | string;
 
 export type RtcDescriptionMessage = {
   type: "rtc_description";
+  channel: SignalChannel;
   fromId: string;
   description: RTCSessionDescriptionInit;
 };
 
 export type RtcCandidateMessage = {
   type: "rtc_candidate";
+  channel: SignalChannel;
   fromId: string;
   candidate: RTCIceCandidateInit;
+};
+
+// --- Group room calls: join/leave a room's mesh session, plus the 2-slot
+// presenter coordination (epoch + absolute-time lease, no central arbiter). ---
+
+export type RoomCallJoinMessage = {
+  type: "room_call_join";
+  roomId: string;
+  fromId: string;
+};
+
+export type RoomCallLeaveMessage = {
+  type: "room_call_leave";
+  roomId: string;
+  fromId: string;
+};
+
+/** Reply to a join, telling the newcomer who is already present (and current
+ * slot state) so they can build the right mesh links immediately. */
+export type RoomCallPresenceMessage = {
+  type: "room_call_presence";
+  roomId: string;
+  fromId: string;
+  participants: string[];
+  slots: PresenterSlotWire[];
+};
+
+export type PresenterSlotWire = {
+  slotIndex: 0 | 1;
+  holderId: string | null;
+  epoch: number;
+  leaseExpiresAt: number;
+  mediaKind: "camera" | "screen" | null;
+};
+
+export type SlotClaimMessage = {
+  type: "slot_claim";
+  roomId: string;
+  slotIndex: 0 | 1;
+  claimantId: string;
+  epoch: number;
+  leaseExpiresAt: number;
+  mediaKind: "camera" | "screen";
+};
+
+export type SlotHeartbeatMessage = {
+  type: "slot_heartbeat";
+  roomId: string;
+  slotIndex: 0 | 1;
+  holderId: string;
+  epoch: number;
+  leaseExpiresAt: number;
+  mediaKind: "camera" | "screen";
+};
+
+export type SlotReleaseMessage = {
+  type: "slot_release";
+  roomId: string;
+  slotIndex: 0 | 1;
+  holderId: string;
+  epoch: number;
+};
+
+// --- Group room membership announcement ---
+
+export type RoomAnnounceMessage = {
+  type: "room_announce";
+  room: {
+    id: string;
+    name: string | null;
+    topic: string | null;
+    createdBy: string;
+    createdAt: number;
+  };
+  memberIds: string[];
 };
 
 export type HavenMessage =
@@ -140,4 +221,11 @@ export type HavenMessage =
   | CallDeclineMessage
   | CallHangupMessage
   | RtcDescriptionMessage
-  | RtcCandidateMessage;
+  | RtcCandidateMessage
+  | RoomCallJoinMessage
+  | RoomCallLeaveMessage
+  | RoomCallPresenceMessage
+  | SlotClaimMessage
+  | SlotHeartbeatMessage
+  | SlotReleaseMessage
+  | RoomAnnounceMessage;

@@ -6,7 +6,9 @@ import * as rosterService from "../roster/rosterService";
 import * as rosterRepo from "../db/rosterRepo";
 import * as roomRepo from "../db/roomRepo";
 import * as chatService from "../room/chatService";
+import * as roomService from "../room/roomService";
 import * as callService from "../call/callService";
+import * as roomCallService from "../call/roomCallService";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useRoomStore } from "../../stores/useRoomStore";
 import { useChatStore } from "../../stores/useChatStore";
@@ -106,10 +108,34 @@ export function initNetworkBridge(self: Identity): () => void {
         callService.handleCallHangup(self, msg);
         break;
       case "rtc_description":
-        await callService.handleRtcDescription(self, msg);
+        if (msg.channel === "dm") await callService.handleRtcDescription(self, msg);
+        else await roomCallService.handleRtcDescription(self, msg);
         break;
       case "rtc_candidate":
-        await callService.handleRtcCandidate(self, msg);
+        if (msg.channel === "dm") await callService.handleRtcCandidate(self, msg);
+        else await roomCallService.handleRtcCandidate(self, msg);
+        break;
+      case "room_announce":
+        await roomService.handleRoomAnnounce(self, msg);
+        await useRoomStore.getState().loadRooms();
+        break;
+      case "room_call_join":
+        roomCallService.handleRoomCallJoin(self, msg);
+        break;
+      case "room_call_leave":
+        roomCallService.handleRoomCallLeave(self, msg);
+        break;
+      case "room_call_presence":
+        roomCallService.handleRoomCallPresence(self, msg);
+        break;
+      case "slot_claim":
+        roomCallService.handleSlotClaim(self, msg);
+        break;
+      case "slot_heartbeat":
+        roomCallService.handleSlotHeartbeat(self, msg);
+        break;
+      case "slot_release":
+        roomCallService.handleSlotRelease(self, msg);
         break;
     }
   }

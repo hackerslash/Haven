@@ -53,6 +53,22 @@ export async function ensureDmRoom(
   );
 }
 
+export async function upsertGroupRoom(room: {
+  id: string;
+  name: string | null;
+  topic: string | null;
+  createdBy: string;
+  createdAt: number;
+}): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO rooms (id, type, name, topic, created_by, created_at)
+     VALUES ($1, 'group', $2, $3, $4, $5)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, topic = excluded.topic`,
+    [room.id, room.name, room.topic, room.createdBy, room.createdAt],
+  );
+}
+
 export async function touchLastMessage(roomId: string, at: number): Promise<void> {
   const db = await getDb();
   await db.execute(
