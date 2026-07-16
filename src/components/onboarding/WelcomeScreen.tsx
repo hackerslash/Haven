@@ -3,7 +3,6 @@ import { useIdentityStore } from "../../stores/useIdentityStore";
 
 export function WelcomeScreen() {
   const createIdentity = useIdentityStore((s) => s.createIdentity);
-  const bootNotice = useIdentityStore((s) => s.bootNotice);
   const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,15 +36,6 @@ export function WelcomeScreen() {
           private key that never leaves your machine — it's how other
           trusted members will recognize you.
         </p>
-
-        {bootNotice && (
-          <p
-            role="status"
-            className="mt-4 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning"
-          >
-            {bootNotice}
-          </p>
-        )}
 
         <label
           htmlFor="displayName"
