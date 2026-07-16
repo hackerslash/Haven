@@ -1,15 +1,30 @@
 import type { Identity } from "../../types/domain";
+import type { HavenMessage } from "../../types/wire";
 import { initPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import * as rosterService from "../roster/rosterService";
 import * as rosterRepo from "../db/rosterRepo";
+import * as roomRepo from "../db/roomRepo";
+import * as chatService from "../room/chatService";
 import { useRosterStore } from "../../stores/useRosterStore";
+import { useRoomStore } from "../../stores/useRoomStore";
+import { useChatStore } from "../../stores/useChatStore";
 
 const DISCOVERY_INTERVAL_MS = 20_000;
 
 function findContactByPeerId(peerId: string) {
   const contacts = Object.values(useRosterStore.getState().contactsById);
   return contacts.find((c) => derivePeerId(c.identityId) === peerId) ?? null;
+}
+
+/** Ensures the DM room for a contact exists locally, then asks that peer to
+ * backfill anything we're missing in it. Both sides derive the same room id,
+ * so this is symmetric with no room-metadata exchange. */
+async function syncDmWith(self: Identity, contactId: string, peerId: string) {
+  const roomId = await chatService.dmRoomId(self.identityId, contactId);
+  await roomRepo.ensureDmRoom(roomId, self.identityId, Date.now());
+  await useRoomStore.getState().loadRooms();
+  await chatService.requestRoomSync(roomId, peerId);
 }
 
 /** Starts this device's PeerJS registration, wires its events into the roster
@@ -24,6 +39,7 @@ export function initNetworkBridge(self: Identity): () => void {
     if (contact) {
       useRosterStore.getState().setPresence(contact.identityId, "online");
       void rosterRepo.markSeen(contact.identityId, peerId, Date.now());
+      void syncDmWith(self, contact.identityId, peerId);
     }
     void rosterService.sendRosterSync(self, peerId);
   });
@@ -36,11 +52,9 @@ export function initNetworkBridge(self: Identity): () => void {
   });
 
   registry.on("message", (peerId, data) => {
-    void rosterService
-      .handleIncomingMessage(self, peerId, data)
-      .then(() => useRosterStore.getState().loadRoster())
-      .then(discover)
-      .catch((err) => console.error("failed handling message from", peerId, err));
+    void routeMessage(peerId, data).catch((err) =>
+      console.error("failed handling message from", peerId, err),
+    );
   });
 
   registry.on("error", (err) => {
@@ -50,6 +64,36 @@ export function initNetworkBridge(self: Identity): () => void {
   registry.start().catch((err) => {
     console.error("failed to register with the signaling broker", err);
   });
+
+  async function routeMessage(peerId: string, data: unknown) {
+    const msg = data as HavenMessage;
+    switch (msg?.type) {
+      case "invite_consume":
+      case "invite_ack":
+      case "roster_sync": {
+        await rosterService.handleIncomingMessage(self, peerId, data);
+        await useRosterStore.getState().loadRoster();
+        // A newly-trusted contact needs its DM room and a backfill pass.
+        const contact = findContactByPeerId(peerId);
+        if (contact) await syncDmWith(self, contact.identityId, peerId);
+        discover();
+        break;
+      }
+      case "chat_message": {
+        const stored = await chatService.handleChatMessage(self, msg, Date.now());
+        if (stored) useChatStore.getState().ingestMessage(stored);
+        break;
+      }
+      case "room_sync_request":
+        await chatService.handleRoomSyncRequest(peerId, msg);
+        break;
+      case "room_sync_response": {
+        const stored = await chatService.handleRoomSyncResponse(self, msg, Date.now());
+        for (const m of stored) useChatStore.getState().ingestMessage(m);
+        break;
+      }
+    }
+  }
 
   function discover() {
     const contacts = Object.values(useRosterStore.getState().contactsById);

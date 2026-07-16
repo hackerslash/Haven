@@ -23,3 +23,33 @@ export type RosterContact = {
 };
 
 export type Presence = "online" | "offline" | "connecting";
+
+export type Room = {
+  id: string;
+  type: "dm" | "group";
+  name: string | null;
+  topic: string | null;
+  createdBy: string | null;
+  createdAt: number;
+  isArchived: boolean;
+  lastMessageAt: number | null;
+};
+
+export type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
+
+export type Message = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorSeq: number;
+  hlc: string;
+  contentType: "text" | "image" | "file" | "system";
+  body: string | null;
+  attachmentPath: string | null;
+  replyToId: string | null;
+  sentAt: number;
+  editedAt: number | null;
+  deletedAt: number | null;
+  sig: string;
+  deliveryStatus: DeliveryStatus;
+};

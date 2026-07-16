@@ -50,7 +50,47 @@ export type RosterSyncMessage = {
   entries: RosterEntryWire[];
 };
 
+export type ChatMessageWire = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorSeq: number;
+  hlc: string;
+  contentType: "text" | "image" | "file" | "system";
+  body: string | null;
+  replyToId: string | null;
+  sentAt: number;
+  editedAt: number | null;
+  deletedAt: number | null;
+  sig: string;
+};
+
+export type ChatMessageMessage = {
+  type: "chat_message";
+  message: ChatMessageWire;
+};
+
+/** DM rooms have deterministic IDs derived from the two member identityIds
+ * (see roomService.dmRoomId), so both sides independently agree on the room a
+ * message belongs to without exchanging room metadata. This carries the
+ * highest author_seq the requester already has per author, so the responder
+ * sends only the gap. */
+export type RoomSyncRequestMessage = {
+  type: "room_sync_request";
+  roomId: string;
+  have: Record<string, number>;
+};
+
+export type RoomSyncResponseMessage = {
+  type: "room_sync_response";
+  roomId: string;
+  messages: ChatMessageWire[];
+};
+
 export type HavenMessage =
   | InviteConsumeMessage
   | InviteAckMessage
-  | RosterSyncMessage;
+  | RosterSyncMessage
+  | ChatMessageMessage
+  | RoomSyncRequestMessage
+  | RoomSyncResponseMessage;
