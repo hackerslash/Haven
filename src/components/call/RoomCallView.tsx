@@ -32,6 +32,7 @@ export function RoomCallView() {
   const camOn = useRoomCallStore((s) => s.camOn);
   const screenOn = useRoomCallStore((s) => s.screenOn);
   const presentError = useRoomCallStore((s) => s.presentError);
+  const speakingIds = useRoomCallStore((s) => s.speakingIds);
   useRoomCallStore((s) => s.mediaVersion); // re-render on track mute/unmute
 
   const leave = useRoomCallStore((s) => s.leave);
@@ -88,6 +89,7 @@ export function RoomCallView() {
                   label={`${nameOf(id)} (screen)`}
                   hasVideo={liveVideo(stream)}
                   fit="fill"
+                  speaking={speakingIds.has(id)}
                 />
               </div>
             ))}
@@ -106,6 +108,7 @@ export function RoomCallView() {
                     participantId={id}
                     quality={qualityFor(id)}
                     hasVideo={id === self?.identityId ? camOn : liveVideo(stream)}
+                    speaking={speakingIds.has(id)}
                   />
                 </div>
               );
@@ -126,6 +129,7 @@ export function RoomCallView() {
                 participantId={id}
                 quality={qualityFor(id)}
                 hasVideo={id === self?.identityId ? camOn : liveVideo(stream)}
+                speaking={speakingIds.has(id)}
               />
             );
           })}

@@ -46,5 +46,17 @@ pub fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0007_read_state.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "friend_requests",
+            sql: include_str!("../migrations/0008_friend_requests.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "message_attachments",
+            sql: include_str!("../migrations/0009_message_attachments.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }

@@ -4,6 +4,7 @@ import { initPeerRegistry, getOutbox } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import * as messageRepo from "../db/messageRepo";
 import * as rosterService from "../roster/rosterService";
+import * as friendRequestService from "../roster/friendRequestService";
 import * as rosterRepo from "../db/rosterRepo";
 import * as roomRepo from "../db/roomRepo";
 import * as roomMembersRepo from "../db/roomMembersRepo";
@@ -135,6 +136,15 @@ export function initNetworkBridge(self: Identity): () => void {
         discover();
         break;
       }
+      case "friend_request":
+        void friendRequestService.handleFriendRequest(self, msg);
+        break;
+      case "friend_request_response":
+        void friendRequestService.handleFriendRequestResponse(self, msg);
+        break;
+      case "file_chunk":
+        void chatService.handleFileChunk(msg);
+        break;
       case "chat_message": {
         const stored = await chatService.handleChatMessage(self, msg, Date.now());
         if (stored) {

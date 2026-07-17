@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { Mic, MicOff, MonitorUp, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
 import { useCallStore } from "../../stores/useCallStore";
 import { useRosterStore } from "../../stores/useRosterStore";
+import { useIdentityStore } from "../../stores/useIdentityStore";
 import { VideoTile } from "./VideoTile";
 import { CallControlBar } from "./CallControlBar";
 import { IconButton } from "../ui/IconButton";
@@ -108,6 +109,9 @@ export function CallOverlay() {
     unknown: "bg-text-muted",
   };
 
+  const self = useIdentityStore((s) => s.self);
+  const speakingIds = useCallStore((s) => s.speakingIds);
+
   const localHasVideo = (camOn || screenOn) && (localStream?.getVideoTracks().length ?? 0) > 0;
 
   return (
@@ -145,6 +149,7 @@ export function CallOverlay() {
             hasVideo={(remoteStream?.getVideoTracks().length ?? 0) > 0}
             quality={quality}
             fit="fill"
+            speaking={speakingIds.has(activeCall.remoteId)}
           />
         </div>
         {/* Local picture-in-picture */}
@@ -155,6 +160,7 @@ export function CallOverlay() {
             muted
             mirror={!screenOn}
             hasVideo={localHasVideo}
+            speaking={self ? speakingIds.has(self.identityId) : false}
           />
         </div>
       </div>

@@ -55,9 +55,9 @@ export function ChatView({ contactId }: ChatViewProps) {
   const messages = useChatStore((s) => (roomId ? s.messagesByRoom[roomId] : undefined));
   const draft = useChatStore((s) => (roomId ? s.draftByRoom[roomId] : undefined)) ?? "";
 
-  function handleSend() {
+  function handleSend(file?: File) {
     if (!roomId) return;
-    void sendMessage(roomId, [contactId], draft);
+    void sendMessage(roomId, [contactId], draft, file);
   }
 
   if (!contact) {

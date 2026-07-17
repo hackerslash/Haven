@@ -63,6 +63,10 @@ export type ChatMessageWire = {
   editedAt: number | null;
   deletedAt: number | null;
   sig: string;
+  attachmentId?: string;
+  attachmentName?: string;
+  attachmentSize?: number;
+  attachmentType?: string;
 };
 
 export type ChatMessageMessage = {
@@ -283,7 +287,39 @@ export type RoomCallBeaconMessage = {
   leaving: boolean;
 };
 
+export type FriendRequestMessage = {
+  type: "friend_request";
+  fromId: string;
+  fromPubKey: string;
+  fromDisplayName: string;
+  ts: number;
+  sig: string;
+};
+
+export type FriendRequestResponseMessage = {
+  type: "friend_request_response";
+  fromId: string;
+  fromPubKey: string;
+  fromDisplayName: string;
+  accepted: boolean;
+  roster: RosterEntryWire[];
+  sig: string;
+};
+
+export type FileChunkMessage = {
+  type: "file_chunk";
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  chunkIndex: number;
+  totalChunks: number;
+  data: string;
+};
+
 export type HavenMessage =
+  | FileChunkMessage
+  | FriendRequestMessage
+  | FriendRequestResponseMessage
   | InviteConsumeMessage
   | InviteAckMessage
   | RosterSyncMessage

@@ -9,7 +9,10 @@ type MessageRow = {
   hlc: string;
   content_type: "text" | "image" | "file" | "system";
   body: string | null;
-  attachment_path: string | null;
+  attachment_id: string | null;
+  attachment_name: string | null;
+  attachment_size: number | null;
+  attachment_type: string | null;
   reply_to_id: string | null;
   sent_at: number;
   edited_at: number | null;
@@ -27,7 +30,10 @@ function fromRow(row: MessageRow): Message {
     hlc: row.hlc,
     contentType: row.content_type,
     body: row.body,
-    attachmentPath: row.attachment_path,
+    attachmentId: row.attachment_id ?? undefined,
+    attachmentName: row.attachment_name ?? undefined,
+    attachmentSize: row.attachment_size ?? undefined,
+    attachmentType: row.attachment_type ?? undefined,
     replyToId: row.reply_to_id,
     sentAt: row.sent_at,
     editedAt: row.edited_at,
@@ -52,9 +58,9 @@ export async function insertIfAbsent(msg: Message): Promise<boolean> {
   const db = await getDb();
   const result = await db.execute(
     `INSERT INTO messages
-       (id, room_id, author_id, author_seq, hlc, content_type, body, attachment_path,
+       (id, room_id, author_id, author_seq, hlc, content_type, body, attachment_id, attachment_name, attachment_size, attachment_type,
         reply_to_id, sent_at, edited_at, deleted_at, sig, delivery_status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT(room_id, author_id, author_seq) DO NOTHING`,
     [
       msg.id,
@@ -64,7 +70,10 @@ export async function insertIfAbsent(msg: Message): Promise<boolean> {
       msg.hlc,
       msg.contentType,
       msg.body,
-      msg.attachmentPath,
+      msg.attachmentId ?? null,
+      msg.attachmentName ?? null,
+      msg.attachmentSize ?? null,
+      msg.attachmentType ?? null,
       msg.replyToId,
       msg.sentAt,
       msg.editedAt,

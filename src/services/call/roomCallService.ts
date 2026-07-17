@@ -13,6 +13,7 @@ import type {
 import { getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import { PeerConnectionWrapper } from "./PeerConnectionWrapper";
+import { SpeakingMonitor } from "./speakingMonitor";
 import {
   HEARTBEAT_MS,
   LEASE_MS,
@@ -52,6 +53,7 @@ type Session = {
   slots: PresenterSlotManager;
   tickTimer: ReturnType<typeof setInterval> | null;
   tickCount: number;
+  speakingMonitor: SpeakingMonitor | null;
 };
 
 let session: Session | null = null;
@@ -264,6 +266,7 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
     slots: new PresenterSlotManager(),
     tickTimer: null,
     tickCount: 0,
+    speakingMonitor: null,
   };
 
   const store = useRoomCallStore.getState();
@@ -277,6 +280,25 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
   broadcastBeacon(false);
 
   session.tickTimer = setInterval(onTick, 1_000);
+
+  const speakingMonitor = new SpeakingMonitor(
+    self.identityId,
+    localStream,
+    () => {
+      const receivers = new Map<string, RTCRtpReceiver[]>();
+      if (!session) return receivers;
+      for (const [remoteId, wrapper] of session.wrappers) {
+        const audioReceivers = wrapper.pc
+          .getReceivers()
+          .filter((r) => r.track && r.track.kind === "audio");
+        if (audioReceivers.length > 0) receivers.set(remoteId, audioReceivers);
+      }
+      return receivers;
+    },
+    (ids) => useRoomCallStore.getState()._setSpeaking(ids),
+  );
+  speakingMonitor.start();
+  session.speakingMonitor = speakingMonitor;
 }
 
 function onTick() {
@@ -319,6 +341,10 @@ export function leaveRoomCall() {
   broadcastBeacon(true);
 
   if (session.tickTimer) clearInterval(session.tickTimer);
+  if (session.speakingMonitor) {
+    session.speakingMonitor.stop();
+    session.speakingMonitor = null;
+  }
   session.wrappers.forEach((w) => w.close());
   session.localStream.getTracks().forEach((t) => t.stop());
   session.cameraTrack?.stop();

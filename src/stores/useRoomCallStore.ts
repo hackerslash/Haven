@@ -24,6 +24,7 @@ type RoomCallState = {
   /** Bumped whenever tracks mute/unmute/arrive so components re-derive
    * hasVideo from live MediaStream objects (same refs, changed contents). */
   mediaVersion: number;
+  speakingIds: Set<string>;
 
   join: (roomId: string) => Promise<void>;
   leave: () => void;
@@ -45,6 +46,7 @@ type RoomCallState = {
   _setScreenOn: (on: boolean) => void;
   _setPresentError: (error: string | null) => void;
   _bumpMediaVersion: () => void;
+  _setSpeaking: (ids: Set<string>) => void;
   _clear: () => void;
 };
 
@@ -68,6 +70,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   screenOn: false,
   presentError: null,
   mediaVersion: 0,
+  speakingIds: new Set<string>(),
 
   join: async (roomId) => {
     const self = requireSelf();
@@ -122,6 +125,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   _setScreenOn: (on) => set({ screenOn: on }),
   _setPresentError: (error) => set({ presentError: error }),
   _bumpMediaVersion: () => set((s) => ({ mediaVersion: s.mediaVersion + 1 })),
+  _setSpeaking: (ids) => set({ speakingIds: ids }),
   _clear: () =>
     set({
       roomId: null,
@@ -137,5 +141,6 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       screenOn: false,
       presentError: null,
       mediaVersion: 0,
+      speakingIds: new Set<string>(),
     }),
 }));

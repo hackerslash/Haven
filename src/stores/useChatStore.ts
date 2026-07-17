@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { DeliveryStatus, Message } from "../types/domain";
 import * as messageRepo from "../services/db/messageRepo";
+import * as fileRepo from "../services/db/fileRepo";
 import * as chatService from "../services/room/chatService";
 import { useIdentityStore } from "./useIdentityStore";
 import { useRoomStore } from "./useRoomStore";
@@ -10,7 +11,7 @@ type ChatState = {
   draftByRoom: Record<string, string>;
 
   loadMessages: (roomId: string) => Promise<void>;
-  sendMessage: (roomId: string, memberIds: string[], body: string) => Promise<void>;
+  sendMessage: (roomId: string, memberIds: string[], body: string, file?: File) => Promise<void>;
   setDraft: (roomId: string, draft: string) => void;
   /** Bridge-called: a message arrived/backfilled from the network and was
    * already persisted; reflect it in the in-memory list if the room is loaded. */
@@ -37,11 +38,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({ messagesByRoom: { ...state.messagesByRoom, [roomId]: messages } }));
   },
 
-  sendMessage: async (roomId, memberIds, body) => {
+  sendMessage: async (roomId, memberIds, body, file) => {
     const self = useIdentityStore.getState().self;
     if (!self) throw new Error("no local identity");
     const trimmed = body.trim();
-    if (!trimmed) return;
+    if (!trimmed && !file) return;
+
+    let attachment: { id: string; name: string; size: number; type: string } | undefined;
+    let fileBuffer: Uint8Array | undefined;
+    if (file) {
+      const id = crypto.randomUUID();
+      const buffer = await file.arrayBuffer();
+      fileBuffer = new Uint8Array(buffer);
+      await fileRepo.insertFile({
+        id,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        data: fileBuffer,
+      });
+      attachment = { id, name: file.name, size: file.size, type: file.type };
+    }
 
     const message = await chatService.sendMessage(
       self,
@@ -49,6 +66,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       memberIds,
       trimmed,
       Date.now(),
+      attachment,
+      fileBuffer
     );
     set((state) => ({
       messagesByRoom: {

@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
-import { motion } from "motion/react";
-import { AlertCircle, Check, CheckCheck, Clock, MessageSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
+import { AlertCircle, Check, CheckCheck, Clock, MessageSquare, Paperclip, X } from "lucide-react";
 import type { DeliveryStatus, Message } from "../../types/domain";
 import { useIdentityStore } from "../../stores/useIdentityStore";
 import { useRosterStore } from "../../stores/useRosterStore";
@@ -8,6 +9,7 @@ import { Avatar } from "../ui/Avatar";
 import { EmptyState } from "../ui/EmptyState";
 import { Skeleton } from "../ui/Skeleton";
 import { cx } from "../../lib/cx";
+import * as fileRepo from "../../services/db/fileRepo";
 
 const GROUP_GAP_MS = 5 * 60_000;
 
@@ -37,6 +39,110 @@ function DeliveryTick({ status }: { status: DeliveryStatus }) {
     case "failed":
       return <AlertCircle size={12} className="text-danger" aria-label="Failed to send" />;
   }
+}
+
+function MessageAttachment({ message }: { message: Message }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!message.attachmentId) return;
+    
+    let objectUrl: string | null = null;
+
+    function checkFile() {
+      // Check if it's an image
+      if (message.attachmentType?.startsWith("image/") || message.contentType === "image") {
+        fileRepo.getFile(message.attachmentId!).then((file) => {
+          if (file) {
+            const blob = new Blob([file.data], { type: file.mimeType });
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            objectUrl = URL.createObjectURL(blob);
+            setUrl(objectUrl);
+          }
+        });
+      }
+    }
+    
+    checkFile();
+
+    const handleFileEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail === message.attachmentId) {
+        checkFile();
+      }
+    };
+    
+    window.addEventListener("haven_file_downloaded", handleFileEvent);
+
+    return () => {
+      window.removeEventListener("haven_file_downloaded", handleFileEvent);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [message.attachmentId, message.attachmentType, message.contentType]);
+
+  // Handle escape key to close lightbox
+  useEffect(() => {
+    if (!expanded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [expanded]);
+
+  if (url) {
+    return (
+      <>
+        <div className="mt-1">
+          <button type="button" onClick={() => setExpanded(true)} className="block cursor-zoom-in text-left">
+            <img src={url} alt={message.attachmentName ?? "Attachment"} className="max-h-60 max-w-full rounded-md object-contain transition-opacity hover:opacity-90" />
+          </button>
+        </div>
+        {createPortal(
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-8 backdrop-blur-sm cursor-zoom-out"
+                onClick={() => setExpanded(false)}
+              >
+                <motion.img
+                  initial={{ scale: 0.95 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0.95 }}
+                  transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                  src={url}
+                  alt={message.attachmentName ?? "Attachment"}
+                  className="max-h-full max-w-full rounded-md object-contain shadow-2xl cursor-default"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <button
+                  type="button"
+                  className="absolute right-4 top-4 rounded-full p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                  onClick={() => setExpanded(false)}
+                  aria-label="Close"
+                >
+                  <X size={24} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className={cx("mt-1 flex items-center gap-2 rounded px-2 py-1 text-xs", message.authorId ? "bg-black/20" : "bg-black/5")}>
+      <Paperclip size={12} />
+      <span className="truncate max-w-[150px]">{message.attachmentName}</span>
+    </div>
+  );
 }
 
 type MessageListProps = {
@@ -163,13 +269,16 @@ export function MessageList({ messages, intro }: MessageListProps) {
                   >
                     <div
                       className={cx(
-                        "select-text whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm",
+                        "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
                         isOwn
-                          ? "bg-accent text-white"
-                          : "bg-bg-tertiary text-text-primary",
+                          ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
+                          : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
                       )}
                     >
-                      {message.body}
+                      {message.body && <div>{message.body}</div>}
+                      {message.attachmentName && (
+                        <MessageAttachment message={message} />
+                      )}
                     </div>
                     <span
                       className={cx(

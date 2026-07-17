@@ -1,4 +1,4 @@
-import { useSettingsStore, type ThemePref } from "../../stores/useSettingsStore";
+import { useSettingsStore, type ThemePref, ACCENT_PRESETS } from "../../stores/useSettingsStore";
 import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 import { cx } from "../../lib/cx";
@@ -17,6 +17,8 @@ type SettingsModalProps = {
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const accent = useSettingsStore((s) => s.accent);
+  const setAccent = useSettingsStore((s) => s.setAccent);
   const pushToTalk = useSettingsStore((s) => s.pushToTalk);
   const setPushToTalk = useSettingsStore((s) => s.setPushToTalk);
   const closeToTray = useSettingsStore((s) => s.closeToTray);
@@ -45,6 +47,28 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {t.label}
             </button>
           ))}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-text-secondary">Accent</p>
+          <div className="flex gap-2" role="radiogroup" aria-label="Accent color">
+            {ACCENT_PRESETS.map((p) => (
+              <button
+                key={p.key}
+                role="radio"
+                aria-checked={accent === p.key}
+                aria-label={p.label}
+                onClick={() => setAccent(p.key)}
+                className={cx(
+                  "size-6 rounded-full transition-shadow",
+                  accent === p.key
+                    ? "ring-2 ring-text-primary ring-offset-2 ring-offset-bg-elevated"
+                    : "hover:ring-2 hover:ring-text-muted hover:ring-offset-2 hover:ring-offset-bg-elevated",
+                )}
+                style={{ backgroundColor: p.base }}
+              />
+            ))}
+          </div>
         </div>
       </div>
 

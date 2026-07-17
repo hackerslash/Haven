@@ -4,6 +4,7 @@ import type {
   ChatMessageWire,
   RoomSyncRequestMessage,
   RoomSyncResponseMessage,
+  FileChunkMessage,
 } from "../../types/wire";
 import * as identityService from "../identity/identity";
 import * as messageRepo from "../db/messageRepo";
@@ -11,7 +12,8 @@ import * as roomRepo from "../db/roomRepo";
 import * as rosterRepo from "../db/rosterRepo";
 import { getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
-import { utf8ToBase64 } from "../../lib/base64";
+import { bytesToBase64, base64ToBytes, utf8ToBase64 } from "../../lib/base64";
+import * as fileRepo from "../db/fileRepo";
 import { formatHlc, tickLocal, tickReceive, type Hlc } from "../../lib/hlc";
 
 // In-memory HLC, seeded from the DB on init. Only this module mutates it.
@@ -50,6 +52,10 @@ function canonicalMessage(m: Omit<ChatMessageWire, "sig">): string {
     m.hlc,
     m.contentType,
     m.body,
+    m.attachmentId ?? null,
+    m.attachmentName ?? null,
+    m.attachmentSize ?? null,
+    m.attachmentType ?? null,
     m.replyToId,
     m.sentAt,
     m.editedAt,
@@ -58,7 +64,7 @@ function canonicalMessage(m: Omit<ChatMessageWire, "sig">): string {
 }
 
 function wireToMessage(w: ChatMessageWire, deliveryStatus: Message["deliveryStatus"]): Message {
-  return { ...w, attachmentPath: null, deliveryStatus };
+  return { ...w, deliveryStatus };
 }
 
 function messageToWire(m: Message): ChatMessageWire {
@@ -70,6 +76,10 @@ function messageToWire(m: Message): ChatMessageWire {
     hlc: m.hlc,
     contentType: m.contentType,
     body: m.body,
+    attachmentId: m.attachmentId,
+    attachmentName: m.attachmentName,
+    attachmentSize: m.attachmentSize,
+    attachmentType: m.attachmentType,
     replyToId: m.replyToId,
     sentAt: m.sentAt,
     editedAt: m.editedAt,
@@ -95,6 +105,8 @@ export async function sendMessage(
   memberIds: string[],
   body: string,
   physicalNow: number,
+  attachment?: { id: string; name: string; size: number; type: string },
+  fileBuffer?: Uint8Array,
 ): Promise<Message> {
   await ensureClock();
   clock = tickLocal(clock, physicalNow, nodeShort(self.identityId));
@@ -106,8 +118,12 @@ export async function sendMessage(
     authorId: self.identityId,
     authorSeq,
     hlc: clock,
-    contentType: "text",
+    contentType: attachment ? (attachment.type.startsWith("image/") ? "image" : "file") : "text",
     body,
+    attachmentId: attachment?.id ?? undefined,
+    attachmentName: attachment?.name ?? undefined,
+    attachmentSize: attachment?.size ?? undefined,
+    attachmentType: attachment?.type ?? undefined,
     replyToId: null,
     sentAt: physicalNow,
     editedAt: null,
@@ -122,6 +138,34 @@ export async function sendMessage(
 
   const payload: ChatMessageMessage = { type: "chat_message", message: wire };
   const recipients = memberIds.filter((id) => id !== self.identityId);
+
+  // If there's a file, chunk and send it BEFORE the message so it's ready when the message arrives
+  if (attachment && fileBuffer) {
+    const CHUNK_SIZE = 16 * 1024;
+    const base64Data = bytesToBase64(fileBuffer);
+    const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+    
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkData = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const chunkMsg: FileChunkMessage = {
+        type: "file_chunk",
+        fileId: attachment.id,
+        fileName: attachment.name,
+        mimeType: attachment.type,
+        chunkIndex: i,
+        totalChunks,
+        data: chunkData
+      };
+      broadcastToRoomMembers(recipients, chunkMsg);
+      
+      // Yield to the event loop every 10 chunks to allow WebRTC buffers to drain
+      // and prevent the UI thread from freezing.
+      if (i % 10 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    }
+  }
+
   const delivered = broadcastToRoomMembers(recipients, payload);
   if (delivered > 0) {
     message.deliveryStatus = "sent";
@@ -156,6 +200,44 @@ export async function handleChatMessage(
   physicalNow: number,
 ): Promise<Message | null> {
   return verifyAndStore(msg.message, physicalNow, self.identityId);
+}
+
+// In-memory store for incoming file chunks
+const incomingFiles = new Map<string, {
+  chunks: string[];
+  receivedCount: number;
+  expected: number;
+  fileName: string;
+  mimeType: string;
+}>();
+
+export async function handleFileChunk(msg: FileChunkMessage): Promise<void> {
+  let state = incomingFiles.get(msg.fileId);
+  if (!state) {
+    state = { chunks: [], receivedCount: 0, expected: msg.totalChunks, fileName: msg.fileName, mimeType: msg.mimeType };
+    incomingFiles.set(msg.fileId, state);
+  }
+  if (!state.chunks[msg.chunkIndex]) {
+    state.chunks[msg.chunkIndex] = msg.data;
+    state.receivedCount++;
+    
+    if (state.receivedCount === state.expected) {
+      incomingFiles.delete(msg.fileId);
+      const fullBase64 = state.chunks.join("");
+      const bytes = base64ToBytes(fullBase64);
+      
+      await fileRepo.insertFile({
+        id: msg.fileId,
+        name: state.fileName,
+        size: bytes.length,
+        mimeType: state.mimeType,
+        data: bytes,
+      });
+      
+      // Dispatch an event so MessageList/MessageAttachment can re-render to load the file
+      window.dispatchEvent(new CustomEvent("haven_file_downloaded", { detail: msg.fileId }));
+    }
+  }
 }
 
 /** Responds with the messages the requester is missing. Also treats their

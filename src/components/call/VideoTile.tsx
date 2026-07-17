@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { ConnectionQuality } from "../../services/call/PeerConnectionWrapper";
 import { Avatar } from "../ui/Avatar";
@@ -18,6 +19,7 @@ type VideoTileProps = {
   /** Real identity id for a deterministic avatar color (falls back to label). */
   participantId?: string;
   quality?: ConnectionQuality;
+  speaking?: boolean;
 };
 
 const QUALITY_DOT: Record<ConnectionQuality, string> = {
@@ -61,6 +63,7 @@ export function VideoTile({
   fit = "grid",
   participantId,
   quality,
+  speaking,
 }: VideoTileProps) {
   const [expanded, setExpanded] = useState(false);
   const inner = { stream, muted, mirror, label, hasVideo, participantId };
@@ -70,10 +73,18 @@ export function VideoTile({
       <div
         onDoubleClick={() => setExpanded(true)}
         className={cx(
-          "group relative flex items-center justify-center overflow-hidden rounded-lg bg-black ring-1 ring-border",
+          "group relative flex items-center justify-center overflow-hidden rounded-lg bg-black ring-1 ring-border/50",
           fit === "fill" ? "h-full w-full min-h-0" : "aspect-video",
         )}
       >
+        {speaking && (
+          <motion.div
+            layoutId={`speaking-ring-${label}`}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="absolute inset-0 z-10 rounded-lg border-2 border-success"
+          />
+        )}
         <VideoInner {...inner} />
         {quality && quality !== "unknown" && (
           <span

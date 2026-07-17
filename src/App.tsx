@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AlertTriangle, Loader2, Shield } from "lucide-react";
+import { AlertTriangle, Shield } from "lucide-react";
+import { motion } from "motion/react";
 import { useIdentityStore } from "./stores/useIdentityStore";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
@@ -44,29 +45,29 @@ function AppBody({
 }) {
   if (bootStatus === "idle" || bootStatus === "loading") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg-base">
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-          <Shield size={28} aria-hidden="true" />
-        </span>
-        <Loader2
-          size={18}
-          className="animate-spin text-text-muted motion-reduce:animate-none"
-          role="status"
-          aria-label="Loading Haven"
-        />
-        <p className="text-xs text-text-muted">Starting Haven…</p>
+      <div className="flex h-full flex-col items-center justify-center bg-bg-base">
+        <motion.div 
+          animate={{ scale: [1, 1.05, 1], opacity: [0.8, 1, 0.8] }}
+          transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+          className="flex h-16 w-16 items-center justify-center rounded-[1.25rem] bg-accent/10 text-accent ring-1 ring-accent/20"
+        >
+          <Shield size={32} strokeWidth={1.5} aria-hidden="true" />
+        </motion.div>
       </div>
     );
   }
 
   if (bootStatus === "error") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg-base p-8 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-danger/15 text-danger">
-          <AlertTriangle size={22} aria-hidden="true" />
-        </span>
-        <p className="text-sm font-medium text-text-primary">Couldn't start Haven</p>
-        <pre className="max-w-md whitespace-pre-wrap rounded-md bg-bg-tertiary p-3 text-left font-mono text-xs text-text-secondary">
+      <div className="flex h-full flex-col items-center justify-center bg-bg-base p-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-danger/10 text-danger ring-1 ring-danger/20 mb-6">
+          <AlertTriangle size={28} strokeWidth={1.5} aria-hidden="true" />
+        </div>
+        <h2 className="text-lg font-semibold text-text-primary">Couldn't start Haven</h2>
+        <p className="mt-2 mb-6 max-w-sm text-[15px] leading-relaxed text-text-secondary" style={{ textWrap: "balance" }}>
+          There was an issue initializing the secure enclave. Check the logs below.
+        </p>
+        <pre className="max-w-xl w-full overflow-x-auto rounded-lg border border-border bg-bg-secondary p-4 text-left font-mono text-xs leading-relaxed text-text-secondary shadow-sm">
           {bootError}
         </pre>
       </div>

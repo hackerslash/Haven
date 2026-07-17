@@ -45,7 +45,10 @@ export type Message = {
   hlc: string;
   contentType: "text" | "image" | "file" | "system";
   body: string | null;
-  attachmentPath: string | null;
+  attachmentId?: string;
+  attachmentName?: string;
+  attachmentSize?: number;
+  attachmentType?: string;
   replyToId: string | null;
   sentAt: number;
   editedAt: number | null;

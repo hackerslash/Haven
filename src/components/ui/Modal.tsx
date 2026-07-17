@@ -29,13 +29,13 @@ function ModalPanel({ onClose, title, size = "md", children, footer }: Omit<Moda
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      initial={{ opacity: 0, scale: 0.96, y: 8 }}
+      initial={{ opacity: 0, scale: 0.9, y: 15 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96, y: 8 }}
-      transition={{ duration: 0.18, ease: [0.25, 1, 0.5, 1] }}
+      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+      transition={{ type: "spring", damping: 25, stiffness: 350 }}
       onClick={(e) => e.stopPropagation()}
       className={cx(
-        "max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-bg-elevated p-5 shadow-modal",
+        "max-h-[85vh] overflow-y-auto rounded-[24px] border border-white/10 bg-bg-elevated/90 p-6 shadow-2xl backdrop-blur-3xl",
         SIZE[size],
       )}
     >
@@ -60,8 +60,8 @@ export function Modal({ open, ...rest }: ModalProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-md"
           onClick={rest.onClose}
         >
           <ModalPanel {...rest} />

@@ -33,14 +33,6 @@ The project's `.npmrc` sets `verify-deps-before-run=false`, so subsequent
 can't relax a *global* security policy directly — pnpm ignores local attempts
 to weaken it — so we disable the redundant per-script reinstall check instead).
 
-## Running two instances on one machine (dev testing)
-
-The app enforces a single instance and one identity per machine. To test the
-P2P flows locally, build two binaries with distinct app identifiers and point
-the second at an isolated keychain entry via `HAVEN_KEYCHAIN_SERVICE`. See the
-build plan for the exact steps; on separate machines just run `pnpm tauri dev`
-on each.
-
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

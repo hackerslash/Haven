@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Copy, KeyRound, Shield, UserPlus } from "lucide-react";
+import { Check, Copy, KeyRound, UserPlus, Sparkles } from "lucide-react";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { Button } from "../ui/Button";
 import { toast } from "../../stores/useToastStore";
@@ -52,73 +52,87 @@ export function HomeView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg p-8">
-      <div className="mb-6 flex flex-col items-center text-center">
-        <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-          <Shield size={28} aria-hidden="true" />
+    <div className="mx-auto w-full max-w-2xl p-10 pt-16">
+      <div className="mb-14 flex flex-col items-center text-center">
+        <span className="mb-6 flex h-14 w-14 items-center justify-center rounded-[18px] bg-bg-secondary text-accent">
+          <Sparkles size={24} strokeWidth={1.5} aria-hidden="true" />
         </span>
-        <h1 className="text-xl font-semibold text-text-primary">Welcome to Haven</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Connect with people you trust — no servers, no accounts.
+        <h1 className="font-display italic text-[32px] font-normal tracking-[-0.02em] text-text-primary" style={{ textWrap: "balance" }}>
+          Welcome home.
+        </h1>
+        <p className="mt-3 max-w-sm text-[16px] leading-relaxed text-text-secondary" style={{ textWrap: "balance" }}>
+          Connect with the people you trust. No servers in the middle, just you and them.
         </p>
       </div>
 
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-bg-secondary p-4">
-          <div className="flex items-center gap-2">
-            <UserPlus size={16} className="text-accent" aria-hidden="true" />
-            <h2 className="text-sm font-semibold">Invite someone</h2>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {/* Create Invite Section */}
+        <section className="flex flex-col rounded-[24px] border border-border/50 bg-bg-secondary p-8 shadow-sm transition-shadow hover:shadow-soft">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-bg-primary text-accent shadow-sm">
+              <UserPlus size={18} aria-hidden="true" />
+            </span>
+            <h2 className="text-[16px] font-semibold tracking-tight text-text-primary">Bring someone in</h2>
           </div>
-          <p className="mt-1 text-sm text-text-secondary">
-            Share this with someone once — they'll be permanently trusted after.
+          <p className="mb-8 text-[14px] leading-relaxed text-text-secondary">
+            Share an invite string once. When they connect, the trust is permanent.
           </p>
-          <Button onClick={handleCreateInvite} loading={creating} className="mt-3">
-            Create invite
-          </Button>
-          {inviteLink && (
-            <div className="mt-3">
-              <div className="relative">
-                <p className="max-h-28 select-text overflow-y-auto break-all rounded-md border border-border bg-bg-base p-3 pr-10 font-mono text-xs text-text-secondary">
+          <div className="mt-auto">
+            {!inviteLink ? (
+              <Button onClick={handleCreateInvite} loading={creating} className="w-full">
+                Generate invite
+              </Button>
+            ) : (
+              <div className="relative animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="max-h-24 select-text overflow-y-auto break-all rounded-[16px] border border-border bg-bg-primary p-4 pr-12 font-mono text-[12px] leading-relaxed text-text-secondary">
                   {inviteLink}
                 </p>
                 <button
                   onClick={handleCopy}
                   aria-label="Copy invite"
-                  className="absolute right-2 top-2 rounded p-1 text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
+                  className="absolute right-2 top-2 rounded-full p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary"
                 >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleJoin} className="rounded-lg border border-border bg-bg-secondary p-4">
-          <div className="flex items-center gap-2">
-            <KeyRound size={16} className="text-accent" aria-hidden="true" />
-            <h2 className="text-sm font-semibold">Join with an invite</h2>
+            )}
           </div>
-          <textarea
-            value={joinInput}
-            onChange={(e) => setJoinInput(e.target.value)}
-            rows={3}
-            placeholder="Paste an invite here…"
-            className="mt-2 w-full resize-none rounded-md border border-border-strong bg-bg-tertiary p-2 font-mono text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-accent focus:ring-1 focus:ring-accent"
-          />
-          <Button
-            type="submit"
-            loading={joinStatus === "joining"}
-            disabled={!joinInput.trim()}
-            className="mt-2"
-          >
-            Connect
-          </Button>
-          {joinStatus === "error" && (
-            <p role="alert" className="mt-2 text-sm text-danger">
-              {joinError}
-            </p>
-          )}
-        </form>
+        </section>
+
+        {/* Join Invite Section */}
+        <section className="flex flex-col rounded-[24px] border border-border/50 bg-bg-secondary p-8 shadow-sm transition-shadow hover:shadow-soft">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-bg-primary text-accent shadow-sm">
+              <KeyRound size={18} aria-hidden="true" />
+            </span>
+            <h2 className="text-[16px] font-semibold tracking-tight text-text-primary">Accept an invite</h2>
+          </div>
+          <p className="mb-6 text-[14px] leading-relaxed text-text-secondary">
+            Got an invite string? Paste it below to establish a secure connection.
+          </p>
+          <form onSubmit={handleJoin} className="mt-auto flex flex-col gap-4">
+            <textarea
+              value={joinInput}
+              onChange={(e) => setJoinInput(e.target.value)}
+              rows={2}
+              placeholder="Paste invite string here..."
+              className="w-full resize-none rounded-[16px] border border-border bg-bg-primary p-4 font-mono text-[12px] text-text-primary outline-none transition-all placeholder:text-text-muted focus:border-accent focus:ring-1 focus:ring-accent"
+            />
+            <Button
+              type="submit"
+              loading={joinStatus === "joining"}
+              disabled={!joinInput.trim()}
+              className="w-full"
+            >
+              Connect
+            </Button>
+            {joinStatus === "error" && (
+              <p role="alert" className="text-center text-[13px] font-medium text-danger animate-in fade-in">
+                {joinError}
+              </p>
+            )}
+          </form>
+        </section>
       </div>
     </div>
   );

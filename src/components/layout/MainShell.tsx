@@ -6,6 +6,7 @@ import { useRoomStore } from "../../stores/useRoomStore";
 import { initNetworkBridge } from "../../services/bridge/networkBridge";
 import { Sidebar, type Selection } from "./Sidebar";
 import { HomeView } from "../invite/HomeView";
+import { InboxView } from "../invite/InboxView";
 import { ChatView } from "../chat/ChatView";
 import { GroupRoomView } from "../room/GroupRoomView";
 import { CreateGroupModal } from "../room/CreateGroupModal";
@@ -16,7 +17,7 @@ import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 let bridgeStarted = false;
 
 function selectionKey(s: Selection): string {
-  return s.kind === "dm" ? `dm:${s.contactId}` : s.kind === "group" ? `group:${s.roomId}` : "home";
+  return s.kind === "dm" ? `dm:${s.contactId}` : s.kind === "group" ? `group:${s.roomId}` : s.kind;
 }
 
 export function MainShell() {
@@ -43,7 +44,6 @@ export function MainShell() {
     initNetworkBridge(self);
   }, [self]);
 
-  // Regaining window focus reads whatever room the user is looking at.
   useEffect(() => {
     function onFocus() {
       if (activeRoomId) void markRead(activeRoomId);
@@ -53,27 +53,29 @@ export function MainShell() {
   }, [activeRoomId, markRead]);
 
   return (
-    <div className="flex h-full bg-bg-primary text-text-primary">
+    <div className="flex h-full text-text-primary bg-bg-base">
       <Sidebar
         selection={selection}
         onSelect={setSelection}
         onCreateGroup={() => setCreatingGroup(true)}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <AnimatePresence mode="wait">
+      <main className="flex min-w-0 flex-1 flex-col relative overflow-hidden bg-bg-primary m-2 ml-0 rounded-[20px] shadow-soft border border-border/40">
+        <AnimatePresence>
           <motion.div
             key={selectionKey(selection)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
+            initial={{ opacity: 0, position: "absolute", inset: 0, y: 4 }}
+            animate={{ opacity: 1, position: "relative", inset: "auto", y: 0 }}
+            exit={{ opacity: 0, position: "absolute", inset: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
             className="flex min-h-0 flex-1 flex-col"
           >
             {selection.kind === "dm" ? (
               <ChatView contactId={selection.contactId} />
             ) : selection.kind === "group" ? (
-              <GroupRoomView roomId={selection.roomId} />
+              <GroupRoomView roomId={selection.roomId} onLeft={() => setSelection({ kind: "home" })} />
+            ) : selection.kind === "inbox" ? (
+              <InboxView />
             ) : (
               <div className="flex-1 overflow-y-auto">
                 <HomeView />

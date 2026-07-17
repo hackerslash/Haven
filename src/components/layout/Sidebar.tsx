@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Copy, Hash, Home, Plus, Settings, Volume2, X } from "lucide-react";
+import { Check, Copy, Hash, Home, Inbox, Plus, Settings, Volume2, X } from "lucide-react";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useRoomStore } from "../../stores/useRoomStore";
 import { useIdentityStore } from "../../stores/useIdentityStore";
@@ -10,6 +10,7 @@ import { cx } from "../../lib/cx";
 
 export type Selection =
   | { kind: "home" }
+  | { kind: "inbox" }
   | { kind: "dm"; contactId: string }
   | { kind: "group"; roomId: string };
 
@@ -50,33 +51,53 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
   return (
     <nav
       aria-label="Conversations"
-      className="flex w-64 shrink-0 flex-col border-r border-border bg-bg-secondary"
+      className="flex w-64 shrink-0 flex-col bg-bg-base"
     >
-      <div className="flex h-12 shrink-0 items-center border-b border-border px-4">
-        <span className="text-sm font-semibold tracking-tight text-text-primary">Haven</span>
+      <div className="flex h-16 shrink-0 items-center px-6">
+        <span className="font-display italic text-xl font-normal tracking-[-0.02em] text-text-primary">
+          Haven
+        </span>
       </div>
 
-      <button
-        onClick={() => onSelect({ kind: "home" })}
-        aria-current={selection.kind === "home" ? "true" : undefined}
-        className={cx(
-          "mx-2 mt-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-          selection.kind === "home"
-            ? "bg-bg-elevated text-text-primary"
-            : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary",
-        )}
-      >
-        <Home size={16} aria-hidden="true" />
-        Home &amp; invites
-      </button>
+      <div className="mx-4 mt-2">
+        <button
+          onClick={() => onSelect({ kind: "home" })}
+          aria-current={selection.kind === "home" ? "true" : undefined}
+          className={cx(
+            "flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left text-[14px] font-medium transition-all duration-200",
+            selection.kind === "home"
+              ? "bg-bg-primary text-text-primary shadow-sm"
+              : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary hover:-translate-y-0.5",
+          )}
+        >
+          <Home size={18} aria-hidden="true" className={selection.kind === "home" ? "text-accent" : "text-text-muted"} />
+          Home &amp; invites
+        </button>
+      </div>
 
-      <div className="flex items-center justify-between px-3 pt-4 pb-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-          Rooms
+      <div className="mx-4 mt-1">
+        <button
+          onClick={() => onSelect({ kind: "inbox" })}
+          aria-current={selection.kind === "inbox" ? "true" : undefined}
+          className={cx(
+            "flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left text-[14px] font-medium transition-all duration-200",
+            selection.kind === "inbox"
+              ? "bg-bg-primary text-text-primary shadow-sm"
+              : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary hover:-translate-y-0.5",
+          )}
+        >
+          <Inbox size={18} aria-hidden="true" className={selection.kind === "inbox" ? "text-accent" : "text-text-muted"} />
+          Inbox
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between px-6 pt-8 pb-3">
+        <span className="text-[12px] font-semibold tracking-[0.05em] text-text-muted uppercase">
+          Spaces
         </span>
         <IconButton icon={Plus} label="Create a room" size="sm" onClick={onCreateGroup} />
       </div>
-      <ul className="px-2">
+      <ul className="px-4 space-y-1">
         {groupRooms.map((room) => {
           const active = selection.kind === "group" && selection.roomId === room.id;
           const inCall = callParticipantsByRoom[room.id]?.length ?? 0;
@@ -87,22 +108,22 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                 onClick={() => onSelect({ kind: "group", roomId: room.id })}
                 aria-current={active ? "true" : undefined}
                 className={cx(
-                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left text-[14px] transition-all duration-200",
                   active
-                    ? "bg-bg-elevated text-text-primary"
+                    ? "bg-bg-primary font-medium text-text-primary shadow-sm"
                     : unread > 0
-                      ? "font-medium text-text-primary hover:bg-bg-tertiary"
-                      : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary",
+                      ? "font-semibold text-text-primary hover:bg-bg-secondary hover:-translate-y-0.5"
+                      : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary hover:-translate-y-0.5",
                 )}
               >
-                <Hash size={16} className="shrink-0 text-text-muted" aria-hidden="true" />
+                <Hash size={18} className={cx("shrink-0", active ? "text-accent" : "text-text-muted")} aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate">{room.name ?? "Room"}</span>
                 {inCall > 0 && (
                   <span
-                    className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-success"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
                     title={`${inCall} in call`}
                   >
-                    <Volume2 size={13} aria-hidden="true" />
+                    <Volume2 size={12} aria-hidden="true" />
                     {inCall}
                   </span>
                 )}
@@ -112,14 +133,14 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
           );
         })}
         {groupRooms.length === 0 && (
-          <li className="px-2 py-1 text-xs text-text-muted">No rooms yet</li>
+          <li className="px-3 py-2 text-[13px] text-text-muted">No spaces yet</li>
         )}
       </ul>
 
-      <div className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-        Direct Messages
+      <div className="px-6 pt-8 pb-3 text-[12px] font-semibold tracking-[0.05em] text-text-muted uppercase">
+        Connections
       </div>
-      <ul className="flex-1 overflow-y-auto px-2">
+      <ul className="flex-1 overflow-y-auto px-4 space-y-1">
         {contacts.map((contact) => {
           const presence = presenceById[contact.identityId] ?? "offline";
           const active = selection.kind === "dm" && selection.contactId === contact.identityId;
@@ -131,18 +152,16 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                 onClick={() => onSelect({ kind: "dm", contactId: contact.identityId })}
                 aria-current={active ? "true" : undefined}
                 className={cx(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors",
+                  "flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 pr-8 text-left transition-all duration-200",
                   active
-                    ? "bg-bg-elevated"
-                    : unread > 0
-                      ? "hover:bg-bg-tertiary"
-                      : "hover:bg-bg-tertiary",
+                    ? "bg-bg-primary shadow-sm"
+                    : "hover:bg-bg-secondary hover:text-text-primary hover:-translate-y-0.5",
                 )}
               >
                 <Avatar id={contact.identityId} name={contact.displayName} size="sm" presence={presence} />
                 <span
                   className={cx(
-                    "min-w-0 flex-1 truncate text-sm",
+                    "min-w-0 flex-1 truncate text-[14px]",
                     active || unread > 0 ? "font-medium text-text-primary" : "text-text-secondary",
                   )}
                 >
@@ -151,7 +170,7 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                 <UnreadBadge count={unread} />
               </button>
               {confirmingId === contact.identityId ? (
-                <span className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                <span className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 bg-bg-primary p-1 rounded-lg shadow-sm z-10">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -159,7 +178,7 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                       setConfirmingId(null);
                     }}
                     aria-label={`Confirm remove ${contact.displayName}`}
-                    className="rounded bg-danger px-1.5 py-0.5 text-xs text-white"
+                    className="rounded-md bg-danger px-2 py-1 text-[11px] font-bold text-white transition-colors hover:bg-danger-hover"
                   >
                     Remove
                   </button>
@@ -169,7 +188,7 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                       setConfirmingId(null);
                     }}
                     aria-label="Cancel"
-                    className="rounded p-0.5 text-text-secondary hover:text-text-primary"
+                    className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
                   >
                     <X size={14} aria-hidden="true" />
                   </button>
@@ -182,7 +201,7 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
                   }}
                   aria-label={`Remove ${contact.displayName}`}
                   title="Remove contact"
-                  className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-text-muted hover:bg-danger hover:text-white group-hover:block"
+                  className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-full bg-bg-primary p-1.5 text-text-muted shadow-sm hover:bg-danger hover:text-white group-hover:block transition-all"
                 >
                   <X size={14} aria-hidden="true" />
                 </button>
@@ -191,26 +210,26 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
           );
         })}
         {contacts.length === 0 && (
-          <li className="px-2 py-1 text-xs text-text-muted">
-            No contacts yet — invite someone from Home.
+          <li className="px-3 py-2 text-[13px] leading-relaxed text-text-muted">
+            No connections yet.
           </li>
         )}
       </ul>
 
       {/* User footer bar */}
-      <div className="flex h-[52px] shrink-0 items-center gap-2 border-t border-border bg-bg-base px-2">
+      <div className="m-4 mt-2 flex shrink-0 items-center gap-3 rounded-[16px] bg-bg-secondary p-3 shadow-sm transition-colors hover:bg-bg-tertiary">
         {self && <Avatar id={self.identityId} name={self.displayName} size="md" />}
         <button
           onClick={copyId}
           title="Copy your ID"
           className="min-w-0 flex-1 text-left"
         >
-          <span className="block truncate text-sm font-medium text-text-primary">
+          <span className="block truncate text-[14px] font-medium text-text-primary transition-colors hover:text-accent">
             {self?.displayName}
           </span>
-          <span className="flex items-center gap-1 font-mono text-[11px] text-text-muted">
+          <span className="flex items-center gap-1 font-mono text-[11px] text-text-muted mt-0.5">
             {self ? shortId(self.identityId) : null}
-            {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+            {copied ? <Check size={12} aria-hidden="true" className="text-success" /> : <Copy size={12} aria-hidden="true" />}
           </span>
         </button>
         <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} />

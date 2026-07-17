@@ -1,45 +1,64 @@
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
 @import "tailwindcss";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/inter";
 
 :root[data-theme="dark"] {
-  --color-bg-base: #121317;
-  --color-bg-primary: #1f2228;
-  --color-bg-secondary: #191b20;
-  --color-bg-tertiary: #262a31;
-  --color-bg-elevated: #2e333b;
-  --color-border: #2c3038;
-  --color-border-strong: #3a3f49;
-  --color-text-primary: #edeef2;
-  --color-text-secondary: #9aa0ab;
-  --color-text-muted: #6b7280;
-  --color-accent: #6366f1;
-  --color-accent-hover: #4f46e5;
-  --color-accent-active: #4338ca;
-  --color-danger: #f04747;
-  --color-danger-hover: #d83c3e;
-  --color-success: #23a55a;
-  --color-warning: #f0b232;
-  --color-unread: #f23f43;
+  /* Haven Dark - Luxury soft, relieved */
+  --color-bg-base: oklch(18% 0.015 290);
+  --color-bg-primary: oklch(20% 0.015 290);
+  --color-bg-secondary: oklch(22% 0.018 290);
+  --color-bg-tertiary: oklch(24% 0.018 290);
+  --color-bg-elevated: oklch(22% 0.018 290);
+  
+  --color-border: oklch(28% 0.015 290);
+  --color-border-strong: oklch(35% 0.015 290);
+  
+  --color-text-primary: oklch(95% 0.010 290);
+  --color-text-secondary: oklch(75% 0.010 290);
+  --color-text-muted: oklch(60% 0.010 290);
+  
+  /* Primary Action: Soft Lavender */
+  --color-accent: oklch(75% 0.12 290);
+  --color-accent-hover: oklch(80% 0.12 290);
+  --color-accent-active: oklch(70% 0.12 290);
+  --color-accent-ink: oklch(18% 0.015 290);
+  
+  /* States */
+  --color-danger: oklch(65% 0.15 25);
+  --color-danger-hover: oklch(60% 0.15 25);
+  --color-success: oklch(70% 0.12 150);
+  --color-warning: oklch(75% 0.12 65);
+  --color-unread: oklch(75% 0.12 290);
 }
 
 :root[data-theme="light"] {
-  --color-bg-base: #e8eaed;
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f3f4f6;
-  --color-bg-tertiary: #eceef1;
-  --color-bg-elevated: #ffffff;
-  --color-border: #d9dce1;
-  --color-border-strong: #c4c9d0;
-  --color-text-primary: #17181c;
-  --color-text-secondary: #5b616c;
-  --color-text-muted: #8b919c;
-  --color-accent: #5b5fe0;
-  --color-accent-hover: #4a4ec9;
-  --color-accent-active: #3f43b3;
-  --color-danger: #d83c3e;
-  --color-danger-hover: #bf3234;
-  --color-success: #1a8b4c;
-  --color-warning: #a86a00;
-  --color-unread: #e03e41;
+  /* Haven Light - Luxury soft, relieved */
+  --color-bg-base: oklch(97% 0.015 290);
+  --color-bg-primary: oklch(100% 0 0);
+  --color-bg-secondary: oklch(94% 0.018 290);
+  --color-bg-tertiary: oklch(91% 0.018 290);
+  --color-bg-elevated: oklch(100% 0 0);
+  
+  --color-border: oklch(88% 0.015 290);
+  --color-border-strong: oklch(80% 0.015 290);
+  
+  --color-text-primary: oklch(22% 0.012 290);
+  --color-text-secondary: oklch(45% 0.012 290);
+  --color-text-muted: oklch(65% 0.012 290);
+  
+  /* Primary Action: Soft Lavender */
+  --color-accent: oklch(70% 0.12 290);
+  --color-accent-hover: oklch(65% 0.12 290);
+  --color-accent-active: oklch(60% 0.12 290);
+  --color-accent-ink: oklch(97% 0.015 290);
+  
+  /* States */
+  --color-danger: oklch(60% 0.15 25);
+  --color-danger-hover: oklch(55% 0.15 25);
+  --color-success: oklch(65% 0.12 150);
+  --color-warning: oklch(70% 0.12 65);
+  --color-unread: oklch(70% 0.12 290);
 }
 
 @theme inline {
@@ -56,14 +75,23 @@
   --color-accent: var(--color-accent);
   --color-accent-hover: var(--color-accent-hover);
   --color-accent-active: var(--color-accent-active);
+  --color-accent-ink: var(--color-accent-ink);
   --color-danger: var(--color-danger);
   --color-danger-hover: var(--color-danger-hover);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-unread: var(--color-unread);
+  
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --shadow-modal: 0 8px 32px rgb(0 0 0 / 0.5);
+  --font-display: "Fraunces Variable", "Fraunces", ui-serif, Georgia, serif;
+  
+  --shadow-modal: 0 16px 32px rgb(0 0 0 / 0.10), 0 0 0 1px var(--color-border);
+  --shadow-soft: 0 8px 24px -10px oklch(70% 0.12 290 / 0.15);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.03);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.05);
+  
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html,
@@ -73,7 +101,7 @@ body,
 }
 
 body {
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-base);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   font-feature-settings: "cv05", "cv11";
@@ -81,6 +109,8 @@ body {
   /* Desktop-app feel: chrome isn't selectable, content re-enables below. */
   user-select: none;
   -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 input,
@@ -101,13 +131,20 @@ textarea,
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+  border: 2px solid var(--color-bg-base);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-strong);
-  border-radius: 4px;
+  border: 2px solid var(--color-bg-base);
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 * {
-  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-color: var(--color-border) transparent;
   scrollbar-width: thin;
 }

@@ -11,6 +11,7 @@ import type {
 import { getOutbox, getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import { PeerConnectionWrapper } from "./PeerConnectionWrapper";
+import { SpeakingMonitor } from "./speakingMonitor";
 import { captureDisplay, releaseDisplayAudio, type DisplayCapture } from "./displayMedia";
 import { emitCallEvent } from "./callEvents";
 import { useCallStore } from "../../stores/useCallStore";
@@ -44,6 +45,7 @@ type CallContext = {
   localStream: MediaStream | null;
   screenStream: MediaStream | null;
   ringTimer: ReturnType<typeof setTimeout> | null;
+  speakingMonitor: SpeakingMonitor | null;
 };
 
 let ctx: CallContext | null = null;
@@ -113,6 +115,27 @@ function attachLocalTracks() {
   }
 }
 
+function startSpeakingMonitor() {
+  if (!ctx || ctx.speakingMonitor) return;
+  const remoteId = ctx.remoteId;
+  const monitor = new SpeakingMonitor(
+    ctx.self.identityId,
+    ctx.localStream,
+    () => {
+      const receivers = new Map<string, RTCRtpReceiver[]>();
+      if (!ctx?.wrapper) return receivers;
+      const audioReceivers = ctx.wrapper.pc
+        .getReceivers()
+        .filter((r) => r.track && r.track.kind === "audio");
+      if (audioReceivers.length > 0) receivers.set(remoteId, audioReceivers);
+      return receivers;
+    },
+    (ids) => useCallStore.getState()._setSpeaking(ids),
+  );
+  monitor.start();
+  ctx.speakingMonitor = monitor;
+}
+
 export async function startCall(self: Identity, roomId: string, remoteId: string, withVideo: boolean) {
   if (ctx) return;
   if (useRoomCallStore.getState().roomId !== null) {
@@ -131,6 +154,7 @@ export async function startCall(self: Identity, roomId: string, remoteId: string
     localStream,
     screenStream: null,
     ringTimer: null,
+    speakingMonitor: null,
   };
 
   const registry = getPeerRegistry();
@@ -190,6 +214,7 @@ export async function acceptCall(self: Identity) {
     localStream,
     screenStream: null,
     ringTimer: null,
+    speakingMonitor: null,
   };
   ctx.wrapper = buildWrapper(self, active.remoteId);
   attachLocalTracks();
@@ -204,6 +229,8 @@ export async function acceptCall(self: Identity) {
     fromId: self.identityId,
     inviteId: ctx.inviteId,
   } satisfies CallAcceptMessage);
+
+  startSpeakingMonitor();
 }
 
 export function declineCall(self: Identity) {
@@ -236,6 +263,10 @@ export function hangUp() {
 function endCallLocal() {
   if (ctx?.ringTimer) clearTimeout(ctx.ringTimer);
   clearIncomingTimer();
+  if (ctx?.speakingMonitor) {
+    ctx.speakingMonitor.stop();
+    ctx.speakingMonitor = null;
+  }
   ctx?.localStream?.getTracks().forEach((t) => t.stop());
   ctx?.screenStream?.getTracks().forEach((t) => t.stop());
   releaseDisplayAudio();
@@ -426,6 +457,8 @@ export function handleCallAccept(self: Identity, msg: CallAcceptMessage) {
   ctx.wrapper = buildWrapper(self, msg.fromId);
   attachLocalTracks();
   useCallStore.getState()._setStatus("connecting");
+
+  startSpeakingMonitor();
 }
 
 export function handleCallDecline(_self: Identity, msg: CallDeclineMessage) {

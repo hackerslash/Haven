@@ -1,0 +1,7 @@
+{
+  "fontStack": "Inter",
+  "palette": "OKLCH custom properties",
+  "motion": "motion 12 installed",
+  "spacing": "Tailwind default",
+  "framework": "React 19 + Vite + Tailwind v4 + Tauri"
+}

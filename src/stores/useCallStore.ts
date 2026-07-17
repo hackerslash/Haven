@@ -31,6 +31,7 @@ type CallState = {
   screenError: string | null;
   connectionState: RTCPeerConnectionState;
   quality: ConnectionQuality;
+  speakingIds: Set<string>;
 
   // User actions
   startCall: (roomId: string, remoteId: string, withVideo: boolean) => Promise<void>;
@@ -51,6 +52,7 @@ type CallState = {
   _setScreenError: (error: string | null) => void;
   _setConnectionState: (state: RTCPeerConnectionState) => void;
   _setQuality: (quality: ConnectionQuality) => void;
+  _setSpeaking: (ids: Set<string>) => void;
   _clear: () => void;
 };
 
@@ -70,6 +72,7 @@ export const useCallStore = create<CallState>((set) => ({
   screenError: null,
   connectionState: "new",
   quality: "unknown",
+  speakingIds: new Set<string>(),
 
   startCall: (roomId, remoteId, withVideo) =>
     callService.startCall(requireSelf(), roomId, remoteId, withVideo),
@@ -93,6 +96,7 @@ export const useCallStore = create<CallState>((set) => ({
   _setScreenError: (error) => set({ screenError: error }),
   _setConnectionState: (connectionState) => set({ connectionState }),
   _setQuality: (quality) => set({ quality }),
+  _setSpeaking: (ids) => set({ speakingIds: ids }),
   _clear: () =>
     set({
       activeCall: null,
@@ -104,5 +108,6 @@ export const useCallStore = create<CallState>((set) => ({
       screenError: null,
       connectionState: "new",
       quality: "unknown",
+      speakingIds: new Set<string>(),
     }),
 }));
