@@ -20,6 +20,9 @@ export type PeerConnectionCallbacks = {
   onConnectionStateChange: (state: RTCPeerConnectionState) => void;
   /** Measured link quality, updated from getStats() every couple seconds. */
   onQuality?: (quality: ConnectionQuality) => void;
+  /** The bitrate cap Max mode currently applies to the screen sender, updated
+   * as the link measurement moves. Only fires while Max mode is active. */
+  onScreenBitrate?: (bps: number) => void;
 };
 
 type Tier = {
@@ -27,6 +30,10 @@ type Tier = {
   scaleResolutionDownBy: number;
   maxFramerate: number;
 };
+
+/** What drives a video sender's encoder: a fixed tier, "max" (link-probed
+ * bitrate at native resolution), or undefined (adaptive tier ladder). */
+export type TierSpec = Tier | "max" | undefined;
 
 // Camera degrades resolution+framerate together as bitrate drops; index 0 is
 // full quality (1080p30 @ 5 Mbps) and services clamp the ceiling per
@@ -45,6 +52,23 @@ const SCREEN_TIERS: Tier[] = [
   { maxBitrate: 600_000, scaleResolutionDownBy: 1.5, maxFramerate: 5 },
 ];
 const TIERS: Record<VideoKind, Tier[]> = { camera: CAMERA_TIERS, screen: SCREEN_TIERS };
+
+// --- Max mode: remote-desktop-style clarity. Native resolution + 60 fps are
+// pinned; the bitrate cap follows the link's real capacity, measured per peer
+// pair from the transport's bandwidth estimate (availableOutgoingBitrate).
+// Where the stat isn't exposed (some WebKit builds) a probe walk stands in:
+// grow on clean samples, halve on loss.
+const MAX_MODE_START = 8_000_000;
+const MAX_MODE_MIN = 2_500_000;
+const MAX_MODE_MAX = 40_000_000;
+/** Ceiling for the blind probe walk — without BWE we only learn about
+ * overshoot from loss, so don't walk into absurd territory. */
+const MAX_MODE_PROBE_MAX = 16_000_000;
+/** Use this fraction of the estimate so the cap sits under capacity and the
+ * estimate keeps room to move. */
+const MAX_MODE_HEADROOM = 0.85;
+/** Ignore cap moves smaller than this so setParameters isn't spammed. */
+const MAX_MODE_HYSTERESIS = 0.15;
 
 const CODEC_PREFERENCE = ["video/VP9", "video/AV1", "video/H264", "video/VP8"];
 
@@ -111,6 +135,10 @@ type SenderAdaptation = {
   goodStreak: number;
   badStreak: number;
   customTier?: Tier;
+  /** Link-probed Max mode; overrides both customTier and the adaptive ladder. */
+  maxMode?: boolean;
+  /** The cap Max mode last applied, i.e. the converged link measurement. */
+  maxModeBitrate?: number;
 };
 
 /**
@@ -196,17 +224,25 @@ export class PeerConnectionWrapper {
     stream: MediaStream,
     kind: VideoKind,
     ceiling = 0,
-    customTier?: Tier,
+    tierSpec?: TierSpec,
   ): RTCRtpSender {
     const tiers = TIERS[kind];
     const startTier = Math.min(Math.max(ceiling, 0), tiers.length - 1);
     try {
+      // "text" biases the codec's screen-content tools toward legibility
+      // (crisp glyph edges over smooth gradients); assigning an unsupported
+      // hint is a silent no-op, so "detail" first as the fallback.
       track.contentHint = kind === "screen" ? "detail" : "motion";
+      if (kind === "screen") track.contentHint = "text";
     } catch {
       // contentHint is advisory; absence is fine
     }
 
-    const initialTier = customTier ?? tiers[startTier];
+    const isMax = tierSpec === "max";
+    const customTier = isMax || tierSpec === undefined ? undefined : tierSpec;
+    const initialTier: Tier = isMax
+      ? { maxBitrate: MAX_MODE_START, scaleResolutionDownBy: 1, maxFramerate: 60 }
+      : (customTier ?? tiers[startTier]);
     const transceiver = this.pc.addTransceiver(track, {
       direction: "sendrecv",
       streams: [stream],
@@ -245,7 +281,10 @@ export class PeerConnectionWrapper {
       goodStreak: 0,
       badStreak: 0,
       customTier,
+      maxMode: isMax,
+      maxModeBitrate: isMax ? MAX_MODE_START : undefined,
     });
+    if (isMax) this.callbacks.onScreenBitrate?.(MAX_MODE_START);
     return sender;
   }
 
@@ -290,18 +329,31 @@ export class PeerConnectionWrapper {
     }
   }
 
-  /** Applies a custom tier overriding adaptive quality, or reverts to it. */
-  applyVideoTier(kind: VideoKind, customTier?: Tier) {
+  /** Applies a fixed tier or link-probed Max mode overriding adaptive
+   * quality, or (undefined) reverts to the adaptive ladder. */
+  applyVideoTier(kind: VideoKind, tierSpec?: TierSpec) {
     for (const [sender, state] of this.videoSenders) {
       if (state.kind !== kind) continue;
-      state.customTier = customTier;
-      if (customTier) {
-        const params = sender.getParameters();
-        if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-        params.encodings[0].maxBitrate = customTier.maxBitrate;
-        params.encodings[0].scaleResolutionDownBy = customTier.scaleResolutionDownBy;
-        params.encodings[0].maxFramerate = customTier.maxFramerate;
-        sender.setParameters(params).catch(() => {});
+      if (tierSpec === "max") {
+        state.customTier = undefined;
+        if (!state.maxMode) {
+          state.maxMode = true;
+          state.maxModeBitrate = MAX_MODE_START;
+          this.setEncoding(sender, MAX_MODE_START, 1, 60);
+          this.callbacks.onScreenBitrate?.(MAX_MODE_START);
+        }
+        continue;
+      }
+      state.maxMode = false;
+      state.maxModeBitrate = undefined;
+      state.customTier = tierSpec;
+      if (tierSpec) {
+        this.setEncoding(
+          sender,
+          tierSpec.maxBitrate,
+          tierSpec.scaleResolutionDownBy,
+          tierSpec.maxFramerate,
+        );
       } else {
         this.applyTier(sender, state, state.tier);
       }
@@ -401,12 +453,20 @@ export class PeerConnectionWrapper {
     let rtt = 0;
     let fractionLost = 0;
     let sawRemoteInbound = false;
+    let availableOutgoingBps = 0;
 
     stats.forEach((report) => {
       if (report.type === "remote-inbound-rtp") {
         sawRemoteInbound = true;
         if (typeof report.roundTripTime === "number") rtt = report.roundTripTime;
         if (typeof report.fractionLost === "number") fractionLost = report.fractionLost;
+      } else if (
+        report.type === "candidate-pair" &&
+        typeof report.availableOutgoingBitrate === "number"
+      ) {
+        // Only the selected pair carries the estimate; max() covers the brief
+        // window where more than one reports during a switch.
+        availableOutgoingBps = Math.max(availableOutgoingBps, report.availableOutgoingBitrate);
       } else if (report.type === "outbound-rtp" && report.kind === "video") {
         // Fallback loss estimate from cumulative counters if no remote report.
         const lost = (report.packetsLost as number) ?? this.lastPacketsLost;
@@ -420,7 +480,33 @@ export class PeerConnectionWrapper {
     });
 
     this.reportQuality(rtt, fractionLost);
+    this.adaptMaxMode(availableOutgoingBps, rtt, fractionLost);
     this.adaptQuality(rtt, fractionLost);
+  }
+
+  /** Max mode's control loop: follow the transport's bandwidth estimate with
+   * some headroom; without the stat, walk the cap up on clean samples and
+   * halve it on loss. Resolution and framerate stay pinned — only bits move. */
+  private adaptMaxMode(availableBps: number, rtt: number, fractionLost: number) {
+    for (const [sender, state] of this.videoSenders) {
+      if (!state.maxMode) continue;
+      if (!sender.track || sender.track.readyState !== "live") continue;
+
+      const current = state.maxModeBitrate ?? MAX_MODE_START;
+      let next = current;
+      if (availableBps > 0) {
+        next = Math.min(Math.max(availableBps * MAX_MODE_HEADROOM, MAX_MODE_MIN), MAX_MODE_MAX);
+      } else if (fractionLost > 0.05 || rtt > 0.4) {
+        next = Math.max(current / 2, MAX_MODE_MIN);
+      } else if (fractionLost < 0.01 && rtt < 0.25) {
+        next = Math.min(current * 1.25, MAX_MODE_PROBE_MAX);
+      }
+
+      if (Math.abs(next - current) / current < MAX_MODE_HYSTERESIS) continue;
+      state.maxModeBitrate = next;
+      this.setEncoding(sender, next, 1, 60);
+      this.callbacks.onScreenBitrate?.(Math.round(next));
+    }
   }
 
   private reportQuality(rtt: number, fractionLost: number) {
@@ -457,20 +543,31 @@ export class PeerConnectionWrapper {
         nextTier = state.tier - 1;
         state.goodStreak = 0;
       }
-      if (nextTier !== state.tier && !state.customTier) this.applyTier(sender, state, nextTier);
+      if (nextTier !== state.tier && !state.customTier && !state.maxMode) {
+        this.applyTier(sender, state, nextTier);
+      }
     }
   }
 
   private applyTier(sender: RTCRtpSender, state: SenderAdaptation, tierIndex: number) {
     state.tier = tierIndex;
     const tier = TIERS[state.kind][tierIndex];
+    this.setEncoding(sender, tier.maxBitrate, tier.scaleResolutionDownBy, tier.maxFramerate);
+  }
+
+  private setEncoding(
+    sender: RTCRtpSender,
+    maxBitrate: number,
+    scaleResolutionDownBy: number,
+    maxFramerate: number,
+  ) {
     // getParameters must be fresh right before setParameters (stale
     // transactionId is rejected).
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-    params.encodings[0].maxBitrate = tier.maxBitrate;
-    params.encodings[0].scaleResolutionDownBy = tier.scaleResolutionDownBy;
-    params.encodings[0].maxFramerate = tier.maxFramerate;
+    params.encodings[0].maxBitrate = Math.round(maxBitrate);
+    params.encodings[0].scaleResolutionDownBy = scaleResolutionDownBy;
+    params.encodings[0].maxFramerate = maxFramerate;
     sender.setParameters(params).catch(() => {});
   }
 

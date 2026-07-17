@@ -43,6 +43,7 @@ export function RoomCallView() {
   const toggleScreenShare = useRoomCallStore((s) => s.toggleScreenShare);
   const screenConfig = useRoomCallStore((s) => s.screenConfig);
   const setScreenConfig = useRoomCallStore((s) => s.setScreenConfig);
+  const screenLinkBps = useRoomCallStore((s) => s.screenLinkBps);
 
   const nameOf = useNameLookup();
 
@@ -83,7 +84,11 @@ export function RoomCallView() {
     <div className="relative flex min-h-0 flex-1 flex-col bg-bg-primary">
       {screenOn && (
         <div className="absolute right-4 top-4 z-30">
-          <ScreenQualityBadge currentConfig={screenConfig} onConfigChange={setScreenConfig} />
+          <ScreenQualityBadge
+            currentConfig={screenConfig}
+            onConfigChange={setScreenConfig}
+            linkBps={screenLinkBps}
+          />
         </div>
       )}
       {hasScreens ? (

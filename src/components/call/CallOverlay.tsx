@@ -37,6 +37,7 @@ export function CallOverlay() {
   const toggleScreenShare = useCallStore((s) => s.toggleScreenShare);
   const screenConfig = useCallStore((s) => s.screenConfig);
   const setScreenConfig = useCallStore((s) => s.setScreenConfig);
+  const screenLinkBps = useCallStore((s) => s.screenLinkBps);
   const self = useIdentityStore((s) => s.self);
   const speakingIds = useCallStore((s) => s.speakingIds);
 
@@ -160,6 +161,7 @@ export function CallOverlay() {
               currentConfig={screenConfig}
               onConfigChange={setScreenConfig}
               quality={quality}
+              linkBps={screenLinkBps}
             />
           </div>
         )}

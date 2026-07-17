@@ -10,6 +10,8 @@ type ScreenQualityBadgeProps = {
   onConfigChange: (config: ScreenShareQualityOption) => void;
   /** Live connection quality, shown as read-only info in the popup. */
   quality?: ConnectionQuality;
+  /** Max mode's live link-tested bitrate cap (bps), if Max is active. */
+  linkBps?: number | null;
 };
 
 const QUALITY_META: Record<ConnectionQuality, { dot: string; label: string }> = {
@@ -19,11 +21,22 @@ const QUALITY_META: Record<ConnectionQuality, { dot: string; label: string }> = 
   unknown: { dot: "bg-text-muted", label: "Measuring…" },
 };
 
-function describe(config: ScreenShareQualityOption) {
+function formatMbps(bps: number): string {
+  return `${(bps / 1_000_000).toFixed(bps < 10_000_000 ? 1 : 0)} Mbps`;
+}
+
+function describe(config: ScreenShareQualityOption, linkBps?: number | null) {
+  if (config.id === "max") {
+    return {
+      resolution: "Native",
+      frameRate: "60 fps",
+      bitrate: linkBps ? `${formatMbps(linkBps)} · link-tested` : "Testing link…",
+    };
+  }
   return {
     resolution: config.width && config.height ? `${config.width}×${config.height}` : "Native",
     frameRate: config.frameRate ? `${config.frameRate} fps` : "Adaptive",
-    bitrate: config.maxBitrate ? `${(config.maxBitrate / 1_000_000).toFixed(config.maxBitrate < 1_000_000 ? 1 : 0)} Mbps` : "Adaptive",
+    bitrate: config.maxBitrate ? formatMbps(config.maxBitrate) : "Adaptive",
   };
 }
 
@@ -32,7 +45,7 @@ function describe(config: ScreenShareQualityOption) {
  * stage) showing the active quality. Clicking it opens a translucent panel with
  * the live stream details and options to switch quality on the fly.
  */
-export function ScreenQualityBadge({ currentConfig, onConfigChange, quality }: ScreenQualityBadgeProps) {
+export function ScreenQualityBadge({ currentConfig, onConfigChange, quality, linkBps }: ScreenQualityBadgeProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +65,7 @@ export function ScreenQualityBadge({ currentConfig, onConfigChange, quality }: S
     };
   }, [open]);
 
-  const info = describe(currentConfig);
+  const info = describe(currentConfig, linkBps);
   const q = QUALITY_META[quality ?? "unknown"];
 
   return (

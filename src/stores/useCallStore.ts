@@ -35,6 +35,8 @@ type CallState = {
   quality: ConnectionQuality;
   speakingIds: Set<string>;
   screenConfig: ScreenShareQualityOption;
+  /** Max mode's live link-tested bitrate cap (bps); null unless Max is active. */
+  screenLinkBps: number | null;
 
   // User actions
   startCall: (roomId: string, remoteId: string, withVideo: boolean) => Promise<void>;
@@ -57,6 +59,7 @@ type CallState = {
   _setConnectionState: (state: RTCPeerConnectionState) => void;
   _setQuality: (quality: ConnectionQuality) => void;
   _setSpeaking: (ids: Set<string>) => void;
+  _setScreenLinkBps: (bps: number | null) => void;
   _clear: () => void;
 };
 
@@ -79,6 +82,7 @@ export const useCallStore = create<CallState>((set) => ({
   quality: "unknown",
   speakingIds: new Set<string>(),
   screenConfig: SCREEN_SHARE_OPTIONS[0],
+  screenLinkBps: null,
 
   startCall: (roomId, remoteId, withVideo) =>
     callService.startCall(requireSelf(), roomId, remoteId, withVideo),
@@ -109,6 +113,7 @@ export const useCallStore = create<CallState>((set) => ({
   _setConnectionState: (connectionState) => set({ connectionState }),
   _setQuality: (quality) => set({ quality }),
   _setSpeaking: (ids) => set({ speakingIds: ids }),
+  _setScreenLinkBps: (bps) => set({ screenLinkBps: bps }),
   _clear: () =>
     set({
       activeCall: null,
@@ -121,5 +126,6 @@ export const useCallStore = create<CallState>((set) => ({
       connectionState: "new",
       quality: "unknown",
       speakingIds: new Set<string>(),
+      screenLinkBps: null,
     }),
 }));

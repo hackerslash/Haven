@@ -14,7 +14,7 @@ import { PeerConnectionWrapper } from "./PeerConnectionWrapper";
 import { SpeakingMonitor } from "./speakingMonitor";
 import { captureDisplay, releaseDisplayAudio, type DisplayCapture } from "./displayMedia";
 import { applyMicProcessing, buildMicConstraints, markVoiceTracks } from "./micAudio";
-import { resolveScreenTier, type ScreenShareQualityOption } from "./screenShareConfig";
+import { resolveScreenTierSpec, type ScreenShareQualityOption } from "./screenShareConfig";
 import { emitCallEvent } from "./callEvents";
 import { useCallStore } from "../../stores/useCallStore";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
@@ -99,6 +99,7 @@ function buildWrapper(self: Identity, remoteId: string): PeerConnectionWrapper {
       } satisfies RtcCandidateMessage),
     onRemoteStream: (stream) => useCallStore.getState()._setRemoteStream(stream),
     onQuality: (quality) => useCallStore.getState()._setQuality(quality),
+    onScreenBitrate: (bps) => useCallStore.getState()._setScreenLinkBps(bps),
     onConnectionStateChange: (state) => {
       useCallStore.getState()._setConnectionState(state);
       if (state === "connected") useCallStore.getState()._setStatus("active");
@@ -304,14 +305,15 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   // Screen rides its own sender (and stream/msid), so camera and screen can
   // run at the same time and the remote can tell them apart. The tier
   // downscales from the native capture width to the selected resolution.
-  const customTier = resolveScreenTier(config, track?.getSettings().width);
+  const tierSpec = resolveScreenTierSpec(config, track?.getSettings().width);
 
   if (ctx.wrapper.hasVideoSender("screen")) {
     await ctx.wrapper.replaceVideoTrack(track, "screen");
-    ctx.wrapper.applyVideoTier("screen", customTier);
+    ctx.wrapper.applyVideoTier("screen", tierSpec);
   } else {
-    ctx.wrapper.addVideoTrack(track, stream, "screen", 0, customTier);
+    ctx.wrapper.addVideoTrack(track, stream, "screen", 0, tierSpec);
   }
+  if (tierSpec !== "max") useCallStore.getState()._setScreenLinkBps(null);
 
   // Forward the system audio the OS returned (never the mic — that's a
   // separate call track). Rides the screen stream's msid so the receiver
@@ -339,6 +341,7 @@ export async function stopScreenShare() {
 
   const store = useCallStore.getState();
   store._setScreenOn(false);
+  store._setScreenLinkBps(null);
   store._setLocalStream(ctx.localStream); // back to the camera/mic stream
 }
 
@@ -515,8 +518,9 @@ export async function updateScreenShareQuality(config: ScreenShareQualityOption)
   if (!ctx?.wrapper) return;
   const track = ctx.screenStream?.getVideoTracks()[0];
   if (track) await applyScreenTrackConstraints(track, config);
-  const customTier = resolveScreenTier(config, track?.getSettings().width);
-  ctx.wrapper.applyVideoTier("screen", customTier);
+  const tierSpec = resolveScreenTierSpec(config, track?.getSettings().width);
+  ctx.wrapper.applyVideoTier("screen", tierSpec);
+  if (tierSpec !== "max") useCallStore.getState()._setScreenLinkBps(null);
 }
 
 /** Best-effort frame-rate hint on a live getDisplayMedia track. Resolution is

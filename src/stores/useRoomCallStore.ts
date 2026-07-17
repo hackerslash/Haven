@@ -27,6 +27,9 @@ type RoomCallState = {
   mediaVersion: number;
   speakingIds: Set<string>;
   screenConfig: ScreenShareQualityOption;
+  /** Max mode's live link-tested bitrate cap (bps) — the weakest peer link.
+   * Null unless Max is active on our own share. */
+  screenLinkBps: number | null;
 
   join: (roomId: string) => Promise<void>;
   leave: () => void;
@@ -50,6 +53,7 @@ type RoomCallState = {
   _setPresentError: (error: string | null) => void;
   _bumpMediaVersion: () => void;
   _setSpeaking: (ids: Set<string>) => void;
+  _setScreenLinkBps: (bps: number | null) => void;
   _clear: () => void;
 };
 
@@ -75,6 +79,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   mediaVersion: 0,
   speakingIds: new Set<string>(),
   screenConfig: SCREEN_SHARE_OPTIONS[0],
+  screenLinkBps: null,
 
   join: async (roomId) => {
     const self = requireSelf();
@@ -136,6 +141,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   _setPresentError: (error) => set({ presentError: error }),
   _bumpMediaVersion: () => set((s) => ({ mediaVersion: s.mediaVersion + 1 })),
   _setSpeaking: (ids) => set({ speakingIds: ids }),
+  _setScreenLinkBps: (bps) => set({ screenLinkBps: bps }),
   _clear: () =>
     set({
       roomId: null,
@@ -152,5 +158,6 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       presentError: null,
       mediaVersion: 0,
       speakingIds: new Set<string>(),
+      screenLinkBps: null,
     }),
 }));

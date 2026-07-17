@@ -22,7 +22,8 @@ import {
 } from "./PresenterSlotManager";
 import { captureDisplay, releaseDisplayAudio } from "./displayMedia";
 import { applyMicProcessing, buildMicConstraints, markVoiceTracks } from "./micAudio";
-import { resolveScreenTier, type ScreenShareQualityOption } from "./screenShareConfig";
+import { resolveScreenTierSpec, type ScreenShareQualityOption } from "./screenShareConfig";
+import type { TierSpec } from "./PeerConnectionWrapper";
 import { emitCallEvent } from "./callEvents";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
 import { useCallStore } from "../../stores/useCallStore";
@@ -43,6 +44,11 @@ type Session = {
   /** Screen video (+ any display audio) on its own msid so receivers can
    * tell it apart from the camera. */
   screenStream: MediaStream | null;
+  /** The quality spec the local share currently runs, so wrappers built for
+   * late joiners start with the same encoding instead of adaptive default. */
+  screenTierSpec: TierSpec;
+  /** Max-mode measured bitrate per remote (each pair has its own link). */
+  screenLinkBps: Map<string, number>;
   wrappers: Map<string, PeerConnectionWrapper>;
   /** Remote streams by their wire (msid) id, per participant — classified
    * into main vs screen using the slot's streamId. */
@@ -89,6 +95,17 @@ function pushParticipantsToStore() {
   if (!session) return;
   const present = [session.self.identityId, ...session.wrappers.keys()];
   useRoomCallStore.getState()._setParticipants(Array.from(new Set(present)));
+}
+
+/** The badge shows one number, so report the weakest link — that peer bounds
+ * what everyone reliably sees. */
+function pushScreenLinkToStore() {
+  const store = useRoomCallStore.getState();
+  if (!session || session.screenTierSpec !== "max" || session.screenLinkBps.size === 0) {
+    store._setScreenLinkBps(null);
+    return;
+  }
+  store._setScreenLinkBps(Math.min(...session.screenLinkBps.values()));
 }
 
 // --- Per-participant camera ceilings scale with mesh size so uplink doesn't
@@ -192,6 +209,11 @@ function ensureWrapper(remoteId: string): PeerConnectionWrapper {
     onTrack: (track, streams) => routeRemoteTrack(remoteId, track, streams),
     onQuality: (quality) =>
       useRoomCallStore.getState()._setParticipantQuality(remoteId, quality),
+    onScreenBitrate: (bps) => {
+      if (!session) return;
+      session.screenLinkBps.set(remoteId, bps);
+      pushScreenLinkToStore();
+    },
     onConnectionStateChange: (state) => {
       useRoomCallStore.getState()._setParticipantConnection(remoteId, state);
       // "failed" gets a chance to ICE-restart; only a fully closed connection
@@ -210,7 +232,17 @@ function ensureWrapper(remoteId: string): PeerConnectionWrapper {
   }
   if (session.screenStream) {
     const video = session.screenStream.getVideoTracks()[0];
-    if (video) wrapper.addVideoTrack(video, session.screenStream, "screen", screenCeiling());
+    if (video) {
+      // Late joiners get the same quality spec the share currently runs,
+      // not the adaptive default.
+      wrapper.addVideoTrack(
+        video,
+        session.screenStream,
+        "screen",
+        screenCeiling(),
+        session.screenTierSpec,
+      );
+    }
     for (const audio of session.screenStream.getAudioTracks()) {
       wrapper.addTrack(audio, session.screenStream);
     }
@@ -235,6 +267,8 @@ function removePeer(remoteId: string) {
     });
   }
   session.remoteStreams.delete(remoteId);
+  session.screenLinkBps.delete(remoteId);
+  pushScreenLinkToStore();
   useRoomCallStore.getState()._removeParticipant(remoteId);
   updateCeilings();
   pushParticipantsToStore();
@@ -259,6 +293,8 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
     localStream,
     cameraTrack: null,
     screenStream: null,
+    screenTierSpec: undefined,
+    screenLinkBps: new Map(),
     wrappers: new Map(),
     remoteStreams: new Map(),
     slots: new PresenterSlotManager(),
@@ -468,14 +504,17 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   videoTrack.onended = () => stopScreenShare();
   await applyScreenTrackConstraints(videoTrack, config);
 
-  const customTier = resolveScreenTier(config, videoTrack?.getSettings().width);
+  const tierSpec = resolveScreenTierSpec(config, videoTrack?.getSettings().width);
+  session.screenTierSpec = tierSpec;
+  session.screenLinkBps.clear();
+  pushScreenLinkToStore();
 
   for (const wrapper of session.wrappers.values()) {
     if (wrapper.hasVideoSender("screen")) {
       void wrapper.replaceVideoTrack(videoTrack, "screen");
-      wrapper.applyVideoTier("screen", customTier);
+      wrapper.applyVideoTier("screen", tierSpec);
     } else {
-      wrapper.addVideoTrack(videoTrack, stream, "screen", screenCeiling(), customTier);
+      wrapper.addVideoTrack(videoTrack, stream, "screen", screenCeiling(), tierSpec);
     }
     // System audio only (never the mic); rides the screen stream's msid.
     for (const audioTrack of stream.getAudioTracks()) {
@@ -500,8 +539,11 @@ function stopScreenShareLocal() {
   tracks.forEach((t) => t.stop());
   releaseDisplayAudio();
   session.screenStream = null;
+  session.screenTierSpec = undefined;
+  session.screenLinkBps.clear();
   const store = useRoomCallStore.getState();
   store._setScreenOn(false);
+  store._setScreenLinkBps(null);
   store._setParticipantScreenStream(session.self.identityId, null);
   store._bumpMediaVersion();
 }
@@ -620,9 +662,12 @@ export async function updateScreenShareQuality(config: ScreenShareQualityOption)
   if (!session) return;
   const track = session.screenStream?.getVideoTracks()[0];
   if (track) await applyScreenTrackConstraints(track, config);
-  const customTier = resolveScreenTier(config, track?.getSettings().width);
+  const tierSpec = resolveScreenTierSpec(config, track?.getSettings().width);
+  session.screenTierSpec = tierSpec;
+  if (tierSpec !== "max") session.screenLinkBps.clear();
+  pushScreenLinkToStore();
   for (const wrapper of session.wrappers.values()) {
-    wrapper.applyVideoTier("screen", customTier);
+    wrapper.applyVideoTier("screen", tierSpec);
   }
 }
 

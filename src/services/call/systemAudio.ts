@@ -41,6 +41,12 @@ export async function startSystemAudioTrack(): Promise<MediaStreamTrack | null> 
     const dest = ctx.createMediaStreamDestination();
     node.connect(dest);
 
+    // The context must be pulling audio BEFORE native capture starts posting
+    // chunks — anything buffered while it's suspended becomes standing
+    // latency behind the shared video (the worklet's governor would cut it,
+    // but better to never build it).
+    if (ctx.state !== "running") await ctx.resume().catch(() => {});
+
     const ch = new Channel<string>();
     ch.onmessage = (b64) => {
       const f32 = base64ToFloat32(b64);

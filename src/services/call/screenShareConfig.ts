@@ -14,6 +14,9 @@ export type ScreenShareQualityOption = {
 // 1080p — fewer bits per pixel).
 export const SCREEN_SHARE_OPTIONS: ScreenShareQualityOption[] = [
   { id: "auto", label: "Auto", short: "Auto" },
+  // Max: native resolution + 60 fps pinned; the bitrate cap is continuously
+  // link-tested per peer (transport bandwidth estimate), remote-desktop style.
+  { id: "max", label: "Max · link-tested", short: "Max", frameRate: 60 },
   { id: "720p_30", label: "720p · 30fps", short: "720p", width: 1280, height: 720, frameRate: 30, maxBitrate: 1_500_000 },
   { id: "720p_60", label: "720p · 60fps", short: "720p60", width: 1280, height: 720, frameRate: 60, maxBitrate: 2_500_000 },
   { id: "1080p_30", label: "1080p · 30fps", short: "1080p", width: 1920, height: 1080, frameRate: 30, maxBitrate: 4_000_000 },
@@ -46,6 +49,16 @@ export type ResolvedScreenTier = {
  * re-capturing. Picking a resolution at or above native leaves scale at 1.
  * `Auto` returns undefined, handing the sender back to adaptive control.
  */
+/** Full sender spec for a quality selection: "max" engages the wrapper's
+ * link-probing mode, a tier pins the encoder, undefined means adaptive. */
+export function resolveScreenTierSpec(
+  config: ScreenShareQualityOption,
+  sourceWidth?: number,
+): ResolvedScreenTier | "max" | undefined {
+  if (config.id === "max") return "max";
+  return resolveScreenTier(config, sourceWidth);
+}
+
 export function resolveScreenTier(
   config: ScreenShareQualityOption,
   sourceWidth?: number,
