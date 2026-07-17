@@ -129,35 +129,57 @@ export function MessageList({ messages, intro }: MessageListProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ type: "spring", stiffness: 500, damping: 40 }}
                 className={cx(
-                  "group -mx-2 flex gap-3 rounded px-2 hover:bg-bg-tertiary/40",
-                  startsGroup ? "mt-3 pt-0.5" : "mt-0.5",
+                  "flex gap-2",
+                  startsGroup ? "mt-3" : "mt-0.5",
+                  isOwn ? "flex-row-reverse" : "flex-row",
                 )}
               >
-                {startsGroup ? (
-                  <Avatar id={message.authorId} name={authorName(message.authorId)} size="md" />
-                ) : (
-                  <span className="w-8 shrink-0 pt-0.5 text-right text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
-                    {timeOf(message.sentAt)}
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  {startsGroup && (
-                    <div className="flex items-baseline gap-2">
+                {/* Avatar column (others only); spacer keeps continuations aligned */}
+                {!isOwn &&
+                  (startsGroup ? (
+                    <Avatar id={message.authorId} name={authorName(message.authorId)} size="md" />
+                  ) : (
+                    <span className="w-8 shrink-0" />
+                  ))}
+                <div
+                  className={cx(
+                    "flex min-w-0 max-w-[75%] flex-col",
+                    isOwn ? "items-end" : "items-start",
+                  )}
+                >
+                  {startsGroup && !isOwn && (
+                    <div className="mb-0.5 flex items-baseline gap-2">
                       <span className="text-sm font-semibold text-text-primary">
                         {authorName(message.authorId)}
                       </span>
                       <span className="text-[11px] text-text-muted">{timeOf(message.sentAt)}</span>
                     </div>
                   )}
-                  <div className="flex items-end gap-1.5">
-                    <p className="select-text whitespace-pre-wrap break-words text-sm text-text-primary">
-                      {message.body}
-                    </p>
-                    {isOwn && (
-                      <span className="mb-0.5 shrink-0">
-                        <DeliveryTick status={message.deliveryStatus} />
-                      </span>
+                  <div
+                    className={cx(
+                      "group flex items-end gap-1.5",
+                      isOwn ? "flex-row-reverse" : "flex-row",
                     )}
+                  >
+                    <div
+                      className={cx(
+                        "select-text whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm",
+                        isOwn
+                          ? "bg-accent text-white"
+                          : "bg-bg-tertiary text-text-primary",
+                      )}
+                    >
+                      {message.body}
+                    </div>
+                    <span
+                      className={cx(
+                        "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
+                        "opacity-0 transition-opacity group-hover:opacity-100",
+                      )}
+                    >
+                      {timeOf(message.sentAt)}
+                      {isOwn && <DeliveryTick status={message.deliveryStatus} />}
+                    </span>
                   </div>
                 </div>
               </motion.div>
