@@ -1,7 +1,11 @@
+import { useEffect, useState } from "react";
 import { useSettingsStore, type ThemePref, ACCENT_PRESETS } from "../../stores/useSettingsStore";
+import { useIdentityStore } from "../../stores/useIdentityStore";
 import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
+import { Button } from "../ui/Button";
 import { cx } from "../../lib/cx";
+import { toast } from "../../stores/useToastStore";
 
 const THEMES: { value: ThemePref; label: string }[] = [
   { value: "system", label: "System" },
@@ -13,6 +17,54 @@ type SettingsModalProps = {
   open: boolean;
   onClose: () => void;
 };
+
+function ProfileSection() {
+  const displayName = useIdentityStore((s) => s.self?.displayName ?? "");
+  const updateDisplayName = useIdentityStore((s) => s.updateDisplayName);
+  const [value, setValue] = useState(displayName);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setValue(displayName), [displayName]);
+
+  const trimmed = value.trim();
+  const dirty = trimmed.length > 0 && trimmed !== displayName;
+
+  async function handleSave() {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      await updateDisplayName(trimmed);
+      toast.success("Name updated");
+    } catch (err) {
+      console.error("Failed to update display name:", err);
+      toast.error("Couldn't update your name", "Please try again.");
+      setValue(displayName);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+        Profile
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          maxLength={32}
+          aria-label="Display name"
+          className="flex-1 rounded-md border border-border bg-bg-base px-3 py-1.5 text-sm text-text-primary outline-none transition-colors focus:border-accent"
+        />
+        <Button size="sm" variant="secondary" loading={saving} disabled={!dirty} onClick={handleSave}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const theme = useSettingsStore((s) => s.theme);
@@ -30,7 +82,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <Modal open={open} onClose={onClose} title="Settings" size="md">
-      <div>
+      <ProfileSection />
+
+      <div className="mt-6">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
           Appearance
         </p>
