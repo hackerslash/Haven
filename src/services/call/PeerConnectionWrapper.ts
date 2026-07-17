@@ -242,6 +242,24 @@ export class PeerConnectionWrapper {
     }
   }
 
+  /** Applies a custom tier overriding adaptive quality, or reverts to it. */
+  applyVideoTier(kind: VideoKind, customTier?: Tier) {
+    for (const [sender, state] of this.videoSenders) {
+      if (state.kind !== kind) continue;
+      state.customTier = customTier;
+      if (customTier) {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+        params.encodings[0].maxBitrate = customTier.maxBitrate;
+        params.encodings[0].scaleResolutionDownBy = customTier.scaleResolutionDownBy;
+        params.encodings[0].maxFramerate = customTier.maxFramerate;
+        sender.setParameters(params).catch(() => {});
+      } else {
+        this.applyTier(sender, state, state.tier);
+      }
+    }
+  }
+
   async handleDescription(description: RTCSessionDescriptionInit) {
     const readyForOffer =
       !this.makingOffer &&

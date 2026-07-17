@@ -26,6 +26,7 @@ type CallState = {
   activeCall: ActiveCall | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  mediaVersion: number;
   micOn: boolean;
   camOn: boolean;
   screenOn: boolean;
@@ -69,6 +70,7 @@ export const useCallStore = create<CallState>((set) => ({
   activeCall: null,
   localStream: null,
   remoteStream: null,
+  mediaVersion: 0,
   micOn: true,
   camOn: false,
   screenOn: false,
@@ -89,13 +91,18 @@ export const useCallStore = create<CallState>((set) => ({
     if (useCallStore.getState().screenOn) await callService.stopScreenShare();
     else await callService.startScreenShare(useCallStore.getState().screenConfig);
   },
-  setScreenConfig: (config) => set({ screenConfig: config }),
+  setScreenConfig: (config) => {
+    set({ screenConfig: config });
+    if (useCallStore.getState().screenOn) {
+      callService.updateScreenShareQuality(config);
+    }
+  },
 
   _setActiveCall: (call) => set({ activeCall: call }),
   _setStatus: (status) =>
     set((s) => ({ activeCall: s.activeCall ? { ...s.activeCall, status } : s.activeCall })),
-  _setLocalStream: (stream) => set({ localStream: stream }),
-  _setRemoteStream: (stream) => set({ remoteStream: stream }),
+  _setLocalStream: (stream) => set((s) => ({ localStream: stream, mediaVersion: s.mediaVersion + 1 })),
+  _setRemoteStream: (stream) => set((s) => ({ remoteStream: stream, mediaVersion: s.mediaVersion + 1 })),
   _setMediaFlags: (micOn, camOn) => set({ micOn, camOn }),
   _setScreenOn: (on) => set({ screenOn: on }),
   _setScreenError: (error) => set({ screenError: error }),

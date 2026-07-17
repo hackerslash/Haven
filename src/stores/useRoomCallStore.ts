@@ -88,7 +88,12 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
     if (useRoomCallStore.getState().screenOn) roomCallService.stopScreenShare();
     else await roomCallService.startScreenShare(useRoomCallStore.getState().screenConfig);
   },
-  setScreenConfig: (config) => set({ screenConfig: config }),
+  setScreenConfig: (config) => {
+    set({ screenConfig: config });
+    if (useRoomCallStore.getState().screenOn) {
+      roomCallService.updateScreenShareQuality(config);
+    }
+  },
 
   _setSession: (roomId) => set({ roomId, presentError: null }),
   _setParticipants: (ids) => set({ participants: ids }),

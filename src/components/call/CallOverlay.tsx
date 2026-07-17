@@ -9,6 +9,7 @@ import { ScreenShareButton } from "./ScreenShareButton";
 import { IconButton } from "../ui/IconButton";
 import { Avatar } from "../ui/Avatar";
 import { cx } from "../../lib/cx";
+import { useRingtone } from "../../hooks/useRingtone";
 
 function useRemoteName(remoteId: string | undefined): string {
   const contact = useRosterStore((s) => (remoteId ? s.contactsById[remoteId] : undefined));
@@ -19,6 +20,7 @@ export function CallOverlay() {
   const activeCall = useCallStore((s) => s.activeCall);
   const localStream = useCallStore((s) => s.localStream);
   const remoteStream = useCallStore((s) => s.remoteStream);
+  const mediaVersion = useCallStore((s) => s.mediaVersion);
   const micOn = useCallStore((s) => s.micOn);
   const camOn = useCallStore((s) => s.camOn);
   const screenOn = useCallStore((s) => s.screenOn);
@@ -36,6 +38,14 @@ export function CallOverlay() {
   const setScreenConfig = useCallStore((s) => s.setScreenConfig);
 
   const remoteName = useRemoteName(activeCall?.remoteId);
+
+  useRingtone(
+    activeCall?.status === "incoming" 
+      ? "incoming" 
+      : activeCall?.status === "ringing" 
+        ? "outgoing" 
+        : null
+  );
 
   if (!activeCall) return null;
 
@@ -144,7 +154,7 @@ export function CallOverlay() {
       )}
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center p-6 pb-28">
-        <div className="h-full w-full max-w-5xl">
+        <div key={`remote-${mediaVersion}`} className="h-full w-full max-w-5xl">
           <VideoTile
             stream={remoteStream}
             label={remoteName}
@@ -156,7 +166,7 @@ export function CallOverlay() {
           />
         </div>
         {/* Local picture-in-picture */}
-        <div className="absolute bottom-28 right-6 h-32 w-48">
+        <div key={`local-${mediaVersion}`} className="absolute bottom-28 right-6 h-32 w-48">
           <VideoTile
             stream={localStream}
             label={screenOn ? "You (screen)" : "You"}

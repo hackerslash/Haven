@@ -306,6 +306,7 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
 
   if (ctx.wrapper.hasVideoSender("screen")) {
     await ctx.wrapper.replaceVideoTrack(track, "screen");
+    ctx.wrapper.applyVideoTier("screen", customTier);
   } else {
     ctx.wrapper.addVideoTrack(track, stream, "screen", 0, customTier);
   }
@@ -503,4 +504,14 @@ export async function handleRtcDescription(_self: Identity, msg: RtcDescriptionM
 export async function handleRtcCandidate(_self: Identity, msg: RtcCandidateMessage) {
   if (!ctx?.wrapper || ctx.remoteId !== msg.fromId) return;
   await ctx.wrapper.handleCandidate(msg.candidate);
+}
+
+export function updateScreenShareQuality(config: ScreenShareQualityOption) {
+  if (!ctx?.wrapper) return;
+  const customTier = config.id !== "auto" && config.maxBitrate ? {
+    maxBitrate: config.maxBitrate,
+    scaleResolutionDownBy: 1,
+    maxFramerate: config.frameRate ?? 30,
+  } : undefined;
+  ctx.wrapper.applyVideoTier("screen", customTier);
 }

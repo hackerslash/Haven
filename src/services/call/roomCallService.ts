@@ -473,6 +473,7 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   for (const wrapper of session.wrappers.values()) {
     if (wrapper.hasVideoSender("screen")) {
       void wrapper.replaceVideoTrack(videoTrack, "screen");
+      wrapper.applyVideoTier("screen", customTier);
     } else {
       wrapper.addVideoTrack(videoTrack, stream, "screen", screenCeiling(), customTier);
     }
@@ -611,3 +612,15 @@ export function isRoomCallActive(roomId: string): boolean {
 }
 
 export { SLOT_COUNT, LEASE_MS, HEARTBEAT_MS };
+
+export function updateScreenShareQuality(config: ScreenShareQualityOption) {
+  if (!session) return;
+  const customTier = config.id !== "auto" && config.maxBitrate ? {
+    maxBitrate: config.maxBitrate,
+    scaleResolutionDownBy: 1,
+    maxFramerate: config.frameRate ?? 30,
+  } : undefined;
+  for (const wrapper of session.wrappers.values()) {
+    wrapper.applyVideoTier("screen", customTier);
+  }
+}
