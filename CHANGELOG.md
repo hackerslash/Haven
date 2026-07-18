@@ -7,6 +7,24 @@ Section headers must match the release tag (`vX.Y.Z`) or bare version
 (`X.Y.Z`) so the release workflow can pull the matching section into the
 GitHub Release notes.
 
+## 0.3.0
+
+### Changed
+
+- Renamed the bundle identifier from `care.ayoo.haven` to `havenapp`. Existing
+  installs start fresh (new identity key and local database) since the app
+  data directory and keychain entry derive from the identifier. On macOS, run
+  `scripts/cleanup-old-identifier-macos.sh` to remove all traces of an old
+  install before upgrading.
+
+### Fixed
+
+- `fix-macos-permissions.sh` now resets stale macOS permission records after
+  re-signing. Previously, grants recorded under the old signature no longer
+  matched and macOS silently denied mic/camera/screen access without ever
+  re-prompting, so calls failed after running the script. It also reads the
+  bundle identifier from the installed app instead of hard-coding it.
+
 ## 0.2.0
 
 ### Security

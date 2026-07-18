@@ -353,7 +353,7 @@ mod imp {
             )
         };
 
-        let queue = DispatchQueue::new("care.ayoo.haven.sysaudio", DispatchQueueAttr::SERIAL);
+        let queue = DispatchQueue::new("havenapp.sysaudio", DispatchQueueAttr::SERIAL);
         let output: &ProtocolObject<dyn SCStreamOutput> = ProtocolObject::from_ref(&*sink);
         unsafe {
             stream.addStreamOutput_type_sampleHandlerQueue_error(

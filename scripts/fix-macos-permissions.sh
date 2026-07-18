@@ -82,8 +82,14 @@ cat > "$WORKDIR/entitlements.plist" <<'PLIST'
 </plist>
 PLIST
 
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+
 echo "==> Signing $APP with '$IDENTITY'"
-codesign --force --identifier care.ayoo.haven --entitlements "$WORKDIR/entitlements.plist" -s "$IDENTITY" "$APP"
+codesign --force --identifier "$BUNDLE_ID" --entitlements "$WORKDIR/entitlements.plist" -s "$IDENTITY" "$APP"
+echo "==> Resetting stale permission records for $BUNDLE_ID"
+for service in Microphone Camera ScreenCapture; do
+  tccutil reset "$service" "$BUNDLE_ID" >/dev/null 2>&1 || true
+done
 
 echo "==> Done. Fully quit Haven (Cmd+Q) if it's running, then reopen it."
 echo "    Grant Screen Recording / Camera / Mic once more — after that they"

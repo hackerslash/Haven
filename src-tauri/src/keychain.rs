@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use keyring::Entry;
 
-const SERVICE: &str = "care.ayoo.haven";
+const SERVICE: &str = "havenapp";
 const ACCOUNT: &str = "identity-private-key";
 
 fn entry() -> Result<Entry, String> {
