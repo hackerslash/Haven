@@ -7,6 +7,63 @@ Section headers must match the release tag (`vX.Y.Z`) or bare version
 (`X.Y.Z`) so the release workflow can pull the matching section into the
 GitHub Release notes.
 
+## 0.2.0
+
+### Security
+
+- Added a sender-authentication chokepoint so only trusted contacts' P2P
+  traffic is processed (outside the invite/friend handshake).
+- Stopped leaking the full roster to strangers on connect.
+- Closed DM message forgery and DM history exfiltration holes (room ids are
+  publicly derivable).
+- `room_leave` must now come from the leaver; file-chunk size/index are now
+  bounded.
+
+### Fixed
+
+**Calls**
+- Fixed a macOS bug where a friend's screen share echoed your own mic back to
+  you: system-audio capture now excludes Haven's application — including the
+  WKWebView helper processes that actually render call audio — at the
+  ScreenCaptureKit filter level, not just the capturing process itself.
+- Fixed switching microphones mid-call sometimes replacing the wrong sender's
+  track (the screen-share audio sender instead of the mic), which could
+  swap or garble the audio the other side heard.
+- Fixed screen shares not appearing during 1:1 video calls — the receiver
+  merged the remote camera and screen tracks into a single stream, but a
+  `<video>` element only ever plays a stream's first video track.
+- Fixed a `startCall`/`joinRoomCall` TOCTOU race, a replayable `call_accept`
+  peer leak, a system-audio stop/start race, and several screen-share track
+  leaks and missing guards.
+- Fixed a stale mic-flag snapshot and an RNNoise cached-rejection bug.
+
+**macOS**
+- TCC (permission) grants no longer reset on every dev rebuild or release
+  build: dev builds are now signed with a stable self-signed identity, and
+  release builds are ad-hoc signed so Screen Recording/Accessibility grants
+  persist across launches after un-quarantine.
+
+**Rust backend**
+- Fixed a system-audio double-start race, a Windows COM lifetime/init
+  imbalance, and an audio-buffer alignment UB.
+
+**Data & load**
+- Fixed a message-vanish race during load/ingest, a direction-blind
+  friend-request lookup that dropped acceptances on mutual requests, and a
+  clock-skew read cursor bug causing phantom unread counts.
+
+**UI**
+- Fixed a stale `activeRoomId`, a push-to-talk shortcut leak, a focus trap
+  attached to `document` instead of the modal, doubled audio on video-tile
+  remount, autoscroll not working for tall messages, modal form state not
+  resetting, and incorrect unread counts across a batched backfill.
+
+### Changed
+
+- Removed dead code, exports, props, the unused opener plugin, and unused
+  dependencies; consolidated the quality-dot table.
+- Batched sync-backfill ingest and added equality guards to cut re-renders.
+
 ## 0.1.0
 
 ### Added
