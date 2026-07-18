@@ -1,19 +1,33 @@
 # Haven
 
-A premium, Discord-inspired peer-to-peer desktop app (Windows + macOS + Linux)
-for persistent text chat and voice/video rooms. Built with Tauri v2 + React +
-TypeScript + Vite. No custom backend — WebRTC signaling goes through the free
-PeerJS cloud broker, with a hosted TURN relay for NAT traversal, and all data
+A premium, Discord-inspired peer-to-peer desktop app for persistent text chat
+and voice/video rooms — Windows, macOS, and Linux. Built with Tauri v2 + React
++ TypeScript + Vite. No custom backend: WebRTC signaling goes through the free
+PeerJS cloud broker with a hosted TURN relay for NAT traversal, and all data
 lives locally in SQLite.
 
-On Linux, the device identity key is stored via the Secret Service D-Bus API,
-so a keyring provider (e.g. GNOME Keyring or KWallet) must be running.
+## Quickstart
 
-## Download
-
-Installers for Windows, macOS (universal), and Linux (`.deb`, `.rpm`,
-`.AppImage`) are published on the
+Download the latest installer from the
 [Releases page](https://github.com/hackerslash/Haven/releases/latest).
+
+**macOS**
+1. Move `Haven.app` into `/Applications`.
+2. Run this once (the build isn't notarized, so without it Screen
+   Recording/Camera/Mic permissions won't persist across relaunches):
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/hackerslash/Haven/main/scripts/fix-macos-permissions.sh | bash
+   ```
+3. Open Haven and grant permissions when prompted.
+
+**Windows**
+Run the downloaded `.exe`/`.msi` installer, then launch Haven from the Start
+menu.
+
+**Linux**
+Install the `.deb`, `.rpm`, or `.AppImage` for your distro. Haven stores its
+identity key via the Secret Service D-Bus API, so a keyring provider (GNOME
+Keyring, KWallet, etc.) must be running.
 
 ## Features
 
@@ -22,16 +36,12 @@ Installers for Windows, macOS (universal), and Linux (`.deb`, `.rpm`,
   system audio capture on macOS
 - Live voice isolation and noise suppression
 - Local-first: all data lives in SQLite, no custom backend
-- Cross-platform: Windows, macOS (universal), and Linux, including a
-  persistent Secret Service-backed identity keychain on Linux
 
-## Prerequisites
+## Development
 
-- [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/)
-- [Rust toolchain](https://www.rust-lang.org/tools/install)
-- Tauri platform dependencies — see https://tauri.app/start/prerequisites/
-
-## Setup
+Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/),
+[Rust](https://www.rust-lang.org/tools/install), and the
+[Tauri platform dependencies](https://tauri.app/start/prerequisites/).
 
 ```sh
 pnpm install
@@ -40,37 +50,16 @@ pnpm tauri dev
 
 If `pnpm install` fails with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, your
 machine has a global pnpm supply-chain policy that blocks recently-published
-packages. Our lockfile pins exact, vetted versions, so install once with the
-guard relaxed for that command:
+packages. The lockfile pins exact, vetted versions, so install once with the
+guard relaxed:
 
 ```sh
 pnpm install --config.minimum-release-age=0
 ```
 
-The project's `.npmrc` sets `verify-deps-before-run=false`, so subsequent
-`pnpm tauri dev` runs won't re-trigger that policy check (a project `.npmrc`
-can't relax a *global* security policy directly — pnpm ignores local attempts
-to weaken it — so we disable the redundant per-script reinstall check instead).
+(The project's `.npmrc` disables the redundant per-script reinstall check, so
+subsequent `pnpm tauri dev` runs won't re-trigger this.)
 
-## Installing on macOS (unsigned build)
-
-Haven's macOS builds are ad-hoc signed, not notarized (that requires a paid
-Apple Developer ID). An ad-hoc signature has no Team Identifier, so macOS can't
-bind a stable identity to it — Screen Recording, Camera, and Mic grants don't
-persist across relaunches even after you approve them and clear the quarantine
-flag, since each launch of the ad-hoc-signed binary looks unverified to macOS.
-
-Fix this once after installing to `/Applications` by running:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/hackerslash/Haven/main/scripts/fix-macos-permissions.sh | bash
-```
-
-This clears the quarantine flag and re-signs the app with a local certificate
-(generated on first run) so macOS has a stable identity to bind permission
-grants to. Fully quit Haven and reopen it, grant permissions once more, and
-they'll persist across future relaunches.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+**IDE setup**: [VS Code](https://code.visualstudio.com/) +
+[Tauri extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) +
+[rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
