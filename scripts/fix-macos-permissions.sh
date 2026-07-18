@@ -83,7 +83,7 @@ cat > "$WORKDIR/entitlements.plist" <<'PLIST'
 PLIST
 
 echo "==> Signing $APP with '$IDENTITY'"
-codesign --force --identifier haven --entitlements "$WORKDIR/entitlements.plist" -s "$IDENTITY" "$APP"
+codesign --force --identifier care.ayoo.haven --entitlements "$WORKDIR/entitlements.plist" -s "$IDENTITY" "$APP"
 
 echo "==> Done. Fully quit Haven (Cmd+Q) if it's running, then reopen it."
 echo "    Grant Screen Recording / Camera / Mic once more — after that they"
