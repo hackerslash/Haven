@@ -131,7 +131,7 @@ export function Composer({ value, placeholder, onChange, onSend }: ComposerProps
       </AnimatePresence>
 
       {/* Discord Style Full Width Input Container */}
-      <div className="relative flex w-full flex-col rounded-xl border border-border/50 bg-bg-tertiary/90 transition-colors focus-within:border-accent/40 shadow-sm">
+      <div className="relative flex w-full flex-col rounded-xl border border-border/50 bg-bg-tertiary/90 transition-colors focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/40 shadow-sm">
         {/* Input Row */}
         <div className="flex w-full items-end gap-1.5 px-3 py-1.5">
           <input

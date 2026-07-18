@@ -65,8 +65,15 @@ type Session = {
   localStream: MediaStream;
   cameraTrack: MediaStreamTrack | null;
   /** Screen video (+ any display audio) on its own msid so receivers can
-   * tell it apart from the camera. */
+   * tell it apart from the camera. Points at screenSendStream while sharing. */
   screenStream: MediaStream | null;
+  /** Session-stable container each share's capture tracks are moved into.
+   * Receivers classify screen streams by the msid announced in the slot
+   * claim, and a reused sender can't re-signal a new msid (WKWebView lacks
+   * setStreams; elsewhere an msid-only change doesn't refire ontrack, so the
+   * refired mute/unmute delivers the original streams array) — a fresh id per
+   * share leaves the second share stuck on "Connecting…" until rejoin. */
+  screenSendStream: MediaStream;
   /** The quality spec the local share currently runs, so wrappers built for
    * late joiners start with the same encoding instead of adaptive default. */
   screenTierSpec: TierSpec;
@@ -362,6 +369,7 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
     localStream,
     cameraTrack: null,
     screenStream: null,
+    screenSendStream: new MediaStream(),
     screenTierSpec: undefined,
     screenWatchers: new Set(),
     screenLinkBps: new Map(),
@@ -884,7 +892,10 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   }
 
   const videoTrack = stream.getVideoTracks()[0];
-  const claim = call.slots.buildClaim(freeIndex, call.self.identityId, stream.id, now);
+  const sendStream = call.screenSendStream;
+  for (const t of sendStream.getTracks()) sendStream.removeTrack(t);
+  for (const t of stream.getTracks()) sendStream.addTrack(t);
+  const claim = call.slots.buildClaim(freeIndex, call.self.identityId, sendStream.id, now);
   if (!claim) {
     // A remote claim took the slot while the picker was open — release the
     // capture AND the native system-audio it started, and tell the user.
@@ -896,7 +907,7 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   broadcast({ ...claim, roomId: call.roomId } satisfies SlotClaimMessage);
   pushSlotsToStore();
 
-  call.screenStream = stream;
+  call.screenStream = sendStream;
   // Fires for the OS "Stop sharing" control AND for captures the system drops
   // on its own (common on Windows/WebView2) — "ended" lets the teardown tell
   // the user the capture was stopped for them.
@@ -926,7 +937,7 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   store._setPresentError(null);
   // Own screen rides the same store slot as remote screens so the stage
   // renders local and remote shares identically.
-  store._setParticipantScreenStream(call.self.identityId, stream);
+  store._setParticipantScreenStream(call.self.identityId, sendStream);
   store._bumpMediaVersion();
 }
 
