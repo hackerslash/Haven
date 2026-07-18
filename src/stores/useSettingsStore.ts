@@ -35,6 +35,11 @@ type SettingsState = {
   /** Mic noise reduction: the built-in DSP plus ML (RNNoise) suppression,
    * gated together by this one toggle. */
   noiseSuppression: boolean;
+  /** Echo cancellation + auto gain. Needed on speakers, but on macOS the
+   * voice-processing unit it engages also processes the OUTPUT path — and
+   * re-pairs on every mic change, audibly altering how remote voices sound.
+   * Headphone users can turn it off for untouched, device-stable playback. */
+  echoCancellation: boolean;
   /** Selected audio input device (microphone). null = browser default. */
   audioInputDeviceId: string | null;
   /** Selected video input device (camera). null = browser default. */
@@ -49,6 +54,7 @@ type SettingsState = {
   setPushToTalk: (on: boolean) => Promise<void>;
   setCloseToTray: (on: boolean) => Promise<void>;
   setNoiseSuppression: (on: boolean) => Promise<void>;
+  setEchoCancellation: (on: boolean) => Promise<void>;
   setAudioInputDeviceId: (deviceId: string | null) => Promise<void>;
   setVideoInputDeviceId: (deviceId: string | null) => Promise<void>;
   setAudioOutputDeviceId: (deviceId: string | null) => Promise<void>;
@@ -109,6 +115,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   pushToTalk: false,
   closeToTray: true,
   noiseSuppression: true,
+  echoCancellation: true,
   audioInputDeviceId: null,
   videoInputDeviceId: null,
   audioOutputDeviceId: null,
@@ -121,6 +128,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const pushToTalk = (all.pushToTalk as boolean) ?? false;
     const closeToTray = (all.closeToTray as boolean) ?? true;
     const noiseSuppression = (all.noiseSuppression as boolean) ?? true;
+    const echoCancellation = (all.echoCancellation as boolean) ?? true;
     const audioInputDeviceId = (all.audioInputDeviceId as string | null) ?? null;
     const videoInputDeviceId = (all.videoInputDeviceId as string | null) ?? null;
     const audioOutputDeviceId = (all.audioOutputDeviceId as string | null) ?? null;
@@ -132,6 +140,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       pushToTalk,
       closeToTray,
       noiseSuppression,
+      echoCancellation,
       audioInputDeviceId,
       videoInputDeviceId,
       audioOutputDeviceId,
@@ -207,6 +216,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       console.error("Failed to save noise suppression setting:", err);
       set({ noiseSuppression: previous });
       applyVoiceSettingsToLiveCalls();
+      toast.error("Setting not saved", "Please try again.");
+    }
+  },
+
+  setEchoCancellation: async (on) => {
+    const previous = get().echoCancellation;
+    set({ echoCancellation: on });
+    // applyConstraints can't reliably change EC on a live WKWebView track —
+    // re-acquire the mic instead (no-op when not in a call).
+    void callService.switchMicDevice();
+    void roomCallService.switchMicDevice();
+    try {
+      await settingsRepo.set("echoCancellation", on);
+    } catch (err) {
+      console.error("Failed to save echo cancellation setting:", err);
+      set({ echoCancellation: previous });
+      void callService.switchMicDevice();
+      void roomCallService.switchMicDevice();
       toast.error("Setting not saved", "Please try again.");
     }
   },

@@ -314,6 +314,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setCloseToTray = useSettingsStore((s) => s.setCloseToTray);
   const noiseSuppression = useSettingsStore((s) => s.noiseSuppression);
   const setNoiseSuppression = useSettingsStore((s) => s.setNoiseSuppression);
+  const echoCancellation = useSettingsStore((s) => s.echoCancellation);
+  const setEchoCancellation = useSettingsStore((s) => s.setEchoCancellation);
 
   return (
     <Modal open={open} onClose={onClose} title="Settings" size="md">
@@ -407,6 +409,20 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               checked={noiseSuppression}
               onChange={setNoiseSuppression}
               aria-label="Noise suppression"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-text-primary">Echo cancellation</p>
+              <p className="text-xs text-text-secondary">
+                Stops your speakers from feeding back into your mic. Turn it off when using
+                headphones — voices play back untouched and stay stable when switching mics
+              </p>
+            </div>
+            <Switch
+              checked={echoCancellation}
+              onChange={setEchoCancellation}
+              aria-label="Echo cancellation"
             />
           </div>
         </div>

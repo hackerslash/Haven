@@ -8,15 +8,17 @@ import { useSettingsStore } from "../../stores/useSettingsStore";
  *     noiseSuppressor.ts) and gated by this same setting; the built-in
  *     constraint stays as a baseline and as the fallback when RNNoise can't
  *     load.
- * Echo cancellation and auto gain stay unconditionally on: turning either off
- * audibly breaks calls, so they're not user-facing knobs.
+ *   - echoCancellation: needed on speakers, but the macOS voice-processing
+ *     unit it engages also processes the OUTPUT path and re-pairs on every
+ *     mic change, audibly altering remote playback. Headphone users can turn
+ *     it off (auto gain rides the same unit, so it's gated together).
  */
 
 export function buildMicConstraints(): MediaTrackConstraints {
-  const { noiseSuppression, audioInputDeviceId } = useSettingsStore.getState();
+  const { noiseSuppression, echoCancellation, audioInputDeviceId } = useSettingsStore.getState();
   return {
-    echoCancellation: true,
-    autoGainControl: true,
+    echoCancellation,
+    autoGainControl: echoCancellation,
     noiseSuppression,
     ...(audioInputDeviceId ? { deviceId: { exact: audioInputDeviceId } } : {}),
   };
