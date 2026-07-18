@@ -9,6 +9,7 @@ import { useRoomStore } from "../../stores/useRoomStore";
 import { Avatar } from "../ui/Avatar";
 import { EmptyState } from "../ui/EmptyState";
 import { Skeleton } from "../ui/Skeleton";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import { cx } from "../../lib/cx";
 import * as fileRepo from "../../services/db/fileRepo";
 
@@ -251,7 +252,7 @@ const MessageRow = memo(function MessageRow({
                   : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
               )}
             >
-              {message.body && <div>{message.body}</div>}
+              {message.body && <MarkdownRenderer content={message.body} isOwn={isOwn} />}
               {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
             </div>
             <span

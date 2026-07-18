@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, SendHorizontal, X } from "lucide-react";
+import { Bold, Code, Italic, Paperclip, Quote, SendHorizontal, Smile, Strikethrough, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { IconButton } from "../ui/IconButton";
 import { MAX_FILE_SIZE } from "../../services/room/chatService";
 import { toast } from "../../stores/useToastStore";
+import { EmojiPicker } from "./EmojiPicker";
 
 type ComposerProps = {
   value: string;
@@ -16,8 +17,7 @@ export function Composer({ value, placeholder, onChange, onSend }: ComposerProps
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // Guards against a double Enter/click firing two sends before the first
-  // one's promise settles — without it the same message could go out twice.
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sending, setSending] = useState(false);
 
   function autoGrow() {
@@ -48,84 +48,206 @@ export function Composer({ value, placeholder, onChange, onSend }: ComposerProps
     if (!value.trim() && !selectedFile) return;
     const result = onSend(selectedFile ?? undefined);
     setSelectedFile(null);
+    setShowEmojiPicker(false);
     if (result) {
       setSending(true);
       void Promise.resolve(result).finally(() => setSending(false));
     }
   }
 
+  function insertTextAtCursor(textToInsert: string) {
+    const el = textareaRef.current;
+    if (!el) {
+      onChange(value + textToInsert);
+      return;
+    }
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const newValue = value.substring(0, start) + textToInsert + value.substring(end);
+    onChange(newValue);
+
+    setTimeout(() => {
+      el.focus();
+      const newPos = start + textToInsert.length;
+      el.setSelectionRange(newPos, newPos);
+      autoGrow();
+    }, 0);
+  }
+
+  function wrapFormatting(prefix: string, suffix = prefix) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const selectedText = value.substring(start, end);
+    const textToInsert = `${prefix}${selectedText || "text"}${suffix}`;
+    const newValue = value.substring(0, start) + textToInsert + value.substring(end);
+    onChange(newValue);
+
+    setTimeout(() => {
+      el.focus();
+      if (selectedText) {
+        el.setSelectionRange(start + prefix.length, end + prefix.length);
+      } else {
+        el.setSelectionRange(start + prefix.length, start + prefix.length + 4);
+      }
+      autoGrow();
+    }, 0);
+  }
+
   return (
-    <div className="px-4 pb-6 pt-2">
+    <div className="relative px-4 pb-4 pt-1">
+      {/* File Attachment Badge */}
       <AnimatePresence>
         {selectedFile && (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="mb-3 flex items-center gap-2 rounded-xl bg-bg-elevated/80 px-4 py-2.5 text-sm text-text-primary shadow-lg backdrop-blur-md border border-white/10 mx-auto max-w-2xl"
+            className="mb-2.5 flex items-center gap-2 rounded-xl bg-bg-elevated px-4 py-2 text-sm text-text-primary shadow-md border border-border/60"
           >
             <Paperclip size={16} className="text-text-muted" />
             <span className="flex-1 truncate font-medium">{selectedFile.name}</span>
             <button
               onClick={() => setSelectedFile(null)}
-              className="rounded-full bg-white/5 p-1 text-text-muted transition-colors hover:bg-danger/20 hover:text-danger"
+              className="rounded-full bg-black/10 p-1 text-text-muted transition-colors hover:bg-danger/20 hover:text-danger"
             >
               <X size={14} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-[24px] border border-white/10 bg-bg-tertiary/60 px-3 py-2 shadow-xl backdrop-blur-2xl transition-all focus-within:border-accent/50 focus-within:bg-bg-tertiary/80 focus-within:shadow-accent/10 focus-within:shadow-2xl">
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              if (file.size > MAX_FILE_SIZE) {
-                toast.error(
-                  "File too large",
-                  `Attachments are limited to ${Math.round(MAX_FILE_SIZE / (1024 * 1024))} MB.`,
-                );
-              } else {
-                setSelectedFile(file);
+
+      {/* Emoji Picker Popover */}
+      <AnimatePresence>
+        {showEmojiPicker && (
+          <EmojiPicker
+            onSelectEmoji={(emoji) => {
+              insertTextAtCursor(emoji);
+            }}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Discord Style Full Width Input Container */}
+      <div className="relative flex w-full flex-col rounded-xl border border-border/50 bg-bg-tertiary/90 transition-colors focus-within:border-accent/40 shadow-sm">
+        {/* Input Row */}
+        <div className="flex w-full items-end gap-1.5 px-3 py-1.5">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                if (file.size > MAX_FILE_SIZE) {
+                  toast.error(
+                    "File too large",
+                    `Attachments are limited to ${Math.round(MAX_FILE_SIZE / (1024 * 1024))} MB.`,
+                  );
+                } else {
+                  setSelectedFile(file);
+                }
               }
-            }
-            if (fileInputRef.current) fileInputRef.current.value = "";
-          }}
-        />
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mb-0.5 ml-1">
-          <IconButton
-            icon={Paperclip}
-            label="Attach file"
-            size="sm"
-            variant="ghost"
-            tooltip={false}
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}
+          />
+
+          {/* Plus / Attach Button */}
+          <button
+            type="button"
+            title="Attach file"
             onClick={() => fileInputRef.current?.click()}
+            className="mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/5 text-text-muted hover:bg-accent hover:text-white transition-colors"
+          >
+            <Plus size={16} />
+          </button>
+
+          {/* Text Area */}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            placeholder={placeholder}
+            aria-label="Message"
+            className="max-h-44 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm text-text-primary outline-none focus:outline-none focus:ring-0 focus:border-0 shadow-none placeholder:text-text-muted leading-relaxed select-text"
           />
-        </motion.div>
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          rows={1}
-          placeholder={placeholder}
-          aria-label="Message"
-          className="max-h-40 flex-1 resize-none border-none bg-transparent px-2 py-2.5 text-sm text-text-primary outline-none placeholder:text-text-muted"
-        />
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mb-0.5 mr-1">
-          <IconButton
-            icon={SendHorizontal}
-            label="Send"
-            size="sm"
-            variant={value.trim() || selectedFile ? "accent" : "ghost"}
-            disabled={sending || (!value.trim() && !selectedFile)}
-            tooltip={false}
-            onClick={handleSend}
-          />
-        </motion.div>
+
+          {/* Actions: Emoji Picker & Send */}
+          <div className="mb-1 flex items-center gap-1 shrink-0">
+            {/* Markdown Quick Toolbar */}
+            <div className="hidden sm:flex items-center gap-0.5 border-r border-border/40 pr-1.5 mr-0.5">
+              <button
+                type="button"
+                onClick={() => wrapFormatting("**")}
+                title="Bold (**text**)"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              >
+                <Bold size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapFormatting("*")}
+                title="Italic (*text*)"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              >
+                <Italic size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapFormatting("~~")}
+                title="Strikethrough (~~text~~)"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              >
+                <Strikethrough size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapFormatting("`")}
+                title="Code (`code`)"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              >
+                <Code size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => wrapFormatting("> ", "")}
+                title="Quote (> text)"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              >
+                <Quote size={14} />
+              </button>
+            </div>
+
+            {/* Emoji Picker Toggle Button */}
+            <button
+              type="button"
+              title="Add emoji"
+              onClick={() => setShowEmojiPicker((v) => !v)}
+              className={`rounded-lg p-1.5 transition-colors ${
+                showEmojiPicker
+                  ? "bg-accent/20 text-accent"
+                  : "text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+              }`}
+            >
+              <Smile size={18} />
+            </button>
+
+            {/* Send Button */}
+            <IconButton
+              icon={SendHorizontal}
+              label="Send message"
+              size="sm"
+              variant={value.trim() || selectedFile ? "accent" : "ghost"}
+              disabled={sending || (!value.trim() && !selectedFile)}
+              tooltip={false}
+              onClick={handleSend}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
