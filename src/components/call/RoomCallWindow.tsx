@@ -1,4 +1,4 @@
-import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, MonitorUp, PhoneOff, Video, VideoOff } from "lucide-react";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
 import { useRoomStore } from "../../stores/useRoomStore";
 import { useRosterStore } from "../../stores/useRosterStore";
@@ -30,6 +30,9 @@ export function RoomCallWindow() {
   const screenStreamsByParticipant = useRoomCallStore((s) => s.screenStreamsByParticipant);
   const qualityByParticipant = useRoomCallStore((s) => s.qualityByParticipant);
   const camOnByParticipant = useRoomCallStore((s) => s.camOnByParticipant);
+  const watchingScreens = useRoomCallStore((s) => s.watchingScreens);
+  const watchScreen = useRoomCallStore((s) => s.watchScreen);
+  const unwatchScreen = useRoomCallStore((s) => s.unwatchScreen);
   const localStream = useRoomCallStore((s) => s.localStream);
   const micOn = useRoomCallStore((s) => s.micOn);
   const camOn = useRoomCallStore((s) => s.camOn);
@@ -58,8 +61,13 @@ export function RoomCallWindow() {
     return streamsByParticipant[id] ?? null;
   }
 
-  const screenShares = Object.entries(screenStreamsByParticipant);
-  const hasScreens = screenShares.length > 0;
+  // The stage is driven by slot claims, not received streams: a presenter
+  // announces the share, and each viewer opts in ("Watch stream") before any
+  // video flows to them.
+  const presenters = slots
+    .map((s) => (s.mediaKind === "screen" ? s.holderId : null))
+    .filter((id): id is string => id !== null);
+  const hasScreens = presenters.length > 0;
 
   function qualityFor(id: string): ConnectionQuality | undefined {
     if (id === self?.identityId) return undefined;
@@ -139,18 +147,54 @@ export function RoomCallWindow() {
         <div className="flex min-h-0 flex-1 flex-col pb-20">
           {/* Screen stage */}
           <div className="flex min-h-0 flex-1 gap-3 p-3">
-            {screenShares.map(([id, stream]) => (
-              <div key={`screen-${id}`} className="min-h-0 min-w-0 flex-1">
-                <VideoTile
-                  stream={stream}
-                  muted={id === self?.identityId}
-                  label={`${nameOf(id)} (screen)`}
-                  hasVideo={hasLiveVideo(stream)}
-                  fit="fill"
-                  speaking={speakingIds.has(id)}
-                />
-              </div>
-            ))}
+            {presenters.map((id) => {
+              const stream = screenStreamsByParticipant[id];
+              const isSelf = id === self?.identityId;
+              const watching = isSelf || watchingScreens.has(id);
+              const live = watching && stream && hasLiveVideo(stream);
+              return (
+                <div key={`screen-${id}`} className="relative min-h-0 min-w-0 flex-1">
+                  {live ? (
+                    <>
+                      <VideoTile
+                        stream={stream}
+                        muted={isSelf}
+                        label={`${nameOf(id)} (screen)`}
+                        hasVideo
+                        fit="fill"
+                        speaking={speakingIds.has(id)}
+                      />
+                      {!isSelf && (
+                        <button
+                          onClick={() => unwatchScreen(id)}
+                          className="absolute left-2 top-2 z-20 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/75"
+                        >
+                          Stop watching
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-lg bg-black ring-1 ring-border/50">
+                      <MonitorUp size={28} className="text-text-secondary" aria-hidden="true" />
+                      <p className="text-sm text-text-secondary">
+                        {isSelf ? "Starting your stream…" : `${nameOf(id)} is presenting`}
+                      </p>
+                      {!isSelf &&
+                        (watching ? (
+                          <p className="text-xs text-text-muted">Connecting…</p>
+                        ) : (
+                          <button
+                            onClick={() => watchScreen(id)}
+                            className="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-hover"
+                          >
+                            Watch stream
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {/* Camera filmstrip under the stage */}
           <div className="flex h-24 shrink-0 gap-2 overflow-x-auto px-3 pb-1">

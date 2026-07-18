@@ -5,6 +5,7 @@ import type {
   RoomCallLeaveMessage,
   RoomCallMediaStateMessage,
   RoomCallPresenceMessage,
+  RoomScreenWatchMessage,
   RtcCandidateMessage,
   RtcDescriptionMessage,
   SlotClaimMessage,
@@ -69,6 +70,9 @@ type Session = {
   /** The quality spec the local share currently runs, so wrappers built for
    * late joiners start with the same encoding instead of adaptive default. */
   screenTierSpec: TierSpec;
+  /** Peers who asked to watch OUR share — screen video/audio is attached
+   * only to these (Discord-style opt-in viewing). Cleared per share. */
+  screenWatchers: Set<string>;
   /** Max-mode measured bitrate per remote (each pair has its own link). */
   screenLinkBps: Map<string, number>;
   wrappers: Map<string, PeerConnectionWrapper>;
@@ -292,30 +296,14 @@ function ensureWrapper(remoteId: string): PeerConnectionWrapper {
     },
   });
 
-  // Full-mesh audio to every peer; camera/screen video too if currently on
-  // (covers late joiners). Transmit the RNNoise-processed track (raw mic
-  // fallback), grouped under the main stream's msid.
+  // Full-mesh audio to every peer; camera video too if currently on (covers
+  // late joiners). Transmit the RNNoise-processed track (raw mic fallback),
+  // grouped under the main stream's msid. The screen share is NOT attached
+  // here — viewing is opt-in (room_screen_watch), late joiners included.
   const audioTrack = outgoingAudioTrack();
   if (audioTrack) wrapper.addTrack(audioTrack, session.localStream);
   if (session.cameraTrack) {
     wrapper.addVideoTrack(session.cameraTrack, session.localStream, "camera", cameraCeiling());
-  }
-  if (session.screenStream) {
-    const video = session.screenStream.getVideoTracks()[0];
-    if (video) {
-      // Late joiners get the same quality spec the share currently runs,
-      // not the adaptive default.
-      wrapper.addVideoTrack(
-        video,
-        session.screenStream,
-        "screen",
-        screenCeiling(),
-        session.screenTierSpec,
-      );
-    }
-    for (const audio of session.screenStream.getAudioTracks()) {
-      wrapper.addTrack(audio, session.screenStream);
-    }
   }
 
   session.wrappers.set(remoteId, wrapper);
@@ -341,6 +329,7 @@ function removePeer(remoteId: string) {
   session.lastSeenAt.delete(remoteId);
   session.mediaFailedSinceAt.delete(remoteId);
   session.screenLinkBps.delete(remoteId);
+  session.screenWatchers.delete(remoteId);
   pushScreenLinkToStore();
   useRoomCallStore.getState()._removeParticipant(remoteId);
   updateCeilings();
@@ -374,6 +363,7 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
     cameraTrack: null,
     screenStream: null,
     screenTierSpec: undefined,
+    screenWatchers: new Set(),
     screenLinkBps: new Map(),
     wrappers: new Map(),
     remoteStreams: new Map(),
@@ -927,18 +917,10 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   call.screenLinkBps.clear();
   pushScreenLinkToStore();
 
-  for (const wrapper of call.wrappers.values()) {
-    if (wrapper.hasVideoSender("screen")) {
-      void wrapper.replaceVideoTrack(videoTrack, "screen");
-      wrapper.applyVideoTier("screen", tierSpec);
-    } else {
-      wrapper.addVideoTrack(videoTrack, stream, "screen", screenCeiling(), tierSpec);
-    }
-    // System audio only (never the mic); rides the screen stream's msid.
-    for (const audioTrack of stream.getAudioTracks()) {
-      wrapper.addTrack(audioTrack, stream);
-    }
-  }
+  // Nobody receives the share until they ask to watch it (Discord-style):
+  // viewers see a "Watch stream" card from the slot claim and opt in via
+  // room_screen_watch, which attaches the tracks for that peer only.
+  call.screenWatchers.clear();
   const store = useRoomCallStore.getState();
   store._setScreenOn(true);
   store._setPresentError(null);
@@ -946,6 +928,68 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   // renders local and remote shares identically.
   store._setParticipantScreenStream(call.self.identityId, stream);
   store._bumpMediaVersion();
+}
+
+/** Attaches the live share's tracks to one peer (they asked to watch). */
+function attachScreenToPeer(remoteId: string) {
+  const call = session;
+  if (!call?.screenStream) return;
+  const wrapper = call.wrappers.get(remoteId);
+  if (!wrapper) return;
+  const videoTrack = call.screenStream.getVideoTracks()[0];
+  if (videoTrack) {
+    if (wrapper.hasVideoSender("screen")) {
+      void wrapper.replaceVideoTrack(videoTrack, "screen", call.screenStream);
+      wrapper.applyVideoTier("screen", call.screenTierSpec);
+    } else {
+      wrapper.addVideoTrack(videoTrack, call.screenStream, "screen", screenCeiling(), call.screenTierSpec);
+    }
+  }
+  // System audio only (never the mic); rides the screen stream's msid.
+  for (const audioTrack of call.screenStream.getAudioTracks()) {
+    wrapper.attachAudioTrack(audioTrack, call.screenStream);
+  }
+}
+
+/** Stops sending the share to one peer (they stopped watching). */
+function detachScreenFromPeer(remoteId: string) {
+  const call = session;
+  if (!call) return;
+  const wrapper = call.wrappers.get(remoteId);
+  if (!wrapper) return;
+  void wrapper.replaceVideoTrack(null, "screen");
+  const screenAudio = new Set(call.screenStream?.getAudioTracks() ?? []);
+  for (const sender of wrapper.pc.getSenders()) {
+    if (sender.track && screenAudio.has(sender.track)) void sender.replaceTrack(null);
+  }
+}
+
+export function handleRoomScreenWatch(_self: Identity, msg: RoomScreenWatchMessage) {
+  if (!session || session.roomId !== msg.roomId) return;
+  if (!isMember(msg.fromId)) return;
+  touchPeer(msg.fromId);
+  if (msg.presenterId !== session.self.identityId) return;
+  if (msg.watching) {
+    session.screenWatchers.add(msg.fromId);
+    attachScreenToPeer(msg.fromId);
+  } else {
+    session.screenWatchers.delete(msg.fromId);
+    detachScreenFromPeer(msg.fromId);
+  }
+}
+
+/** Viewer side: opt in/out of a presenter's live share. */
+export function setScreenWatching(presenterId: string, watching: boolean) {
+  const call = session;
+  if (!call) return;
+  send(presenterId, {
+    type: "room_screen_watch",
+    roomId: call.roomId,
+    fromId: call.self.identityId,
+    presenterId,
+    watching,
+  } satisfies RoomScreenWatchMessage);
+  useRoomCallStore.getState()._setWatchingScreen(presenterId, watching);
 }
 
 function stopScreenShareLocal() {
@@ -956,6 +1000,7 @@ function stopScreenShareLocal() {
   }
   tracks.forEach((t) => t.stop());
   releaseDisplayAudio();
+  session.screenWatchers.clear();
   session.screenStream = null;
   session.screenTierSpec = undefined;
   session.screenLinkBps.clear();

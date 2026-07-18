@@ -16,6 +16,9 @@ type RoomCallState = {
   streamsByParticipant: Record<string, MediaStream>;
   /** Screen-share stream per participant (absent = not sharing). */
   screenStreamsByParticipant: Record<string, MediaStream>;
+  /** Presenters whose share we opted in to watch (Discord-style: streams
+   * flow only after "Watch stream"). Pruned when a presenter's slot ends. */
+  watchingScreens: Set<string>;
   qualityByParticipant: Record<string, ConnectionQuality>;
   /** Announced camera state per remote (absent = unknown, fall back to
    * track-mute detection). WebKit receivers don't reliably fire `mute` when
@@ -41,11 +44,14 @@ type RoomCallState = {
   toggleCam: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
   setScreenConfig: (config: ScreenShareQualityOption) => void;
+  watchScreen: (presenterId: string) => void;
+  unwatchScreen: (presenterId: string) => void;
 
   _setSession: (roomId: string) => void;
   _setParticipants: (ids: string[]) => void;
   _removeParticipant: (id: string) => void;
   _setSlots: (slots: PresenterSlotWire[]) => void;
+  _setWatchingScreen: (presenterId: string, watching: boolean) => void;
   _setParticipantStream: (id: string, stream: MediaStream) => void;
   _setParticipantScreenStream: (id: string, stream: MediaStream | null) => void;
   _setParticipantQuality: (id: string, quality: ConnectionQuality) => void;
@@ -73,6 +79,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   slots: [],
   streamsByParticipant: {},
   screenStreamsByParticipant: {},
+  watchingScreens: new Set<string>(),
   qualityByParticipant: {},
   camOnByParticipant: {},
   localStream: null,
@@ -108,6 +115,8 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       void roomCallService.updateScreenShareQuality(config);
     }
   },
+  watchScreen: (presenterId) => roomCallService.setScreenWatching(presenterId, true),
+  unwatchScreen: (presenterId) => roomCallService.setScreenWatching(presenterId, false),
 
   _setSession: (roomId) => set({ roomId, presentError: null }),
   _setParticipants: (ids) => set({ participants: ids }),
@@ -129,7 +138,21 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
         camOnByParticipant: cams,
       };
     }),
-  _setSlots: (slots) => set({ slots }),
+  _setSlots: (slots) =>
+    set((s) => {
+      // A presenter whose slot ended takes our watch opt-in with it — the
+      // next share starts back at the "Watch stream" card.
+      const holders = new Set(slots.filter((sl) => sl.holderId !== null).map((sl) => sl.holderId));
+      const watching = new Set([...s.watchingScreens].filter((id) => holders.has(id)));
+      return { slots, watchingScreens: watching };
+    }),
+  _setWatchingScreen: (presenterId, watching) =>
+    set((s) => {
+      const next = new Set(s.watchingScreens);
+      if (watching) next.add(presenterId);
+      else next.delete(presenterId);
+      return { watchingScreens: next };
+    }),
   _setParticipantStream: (id, stream) =>
     set((s) => ({ streamsByParticipant: { ...s.streamsByParticipant, [id]: stream } })),
   _setParticipantScreenStream: (id, stream) =>
@@ -161,6 +184,7 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       slots: [],
       streamsByParticipant: {},
       screenStreamsByParticipant: {},
+      watchingScreens: new Set<string>(),
       qualityByParticipant: {},
       camOnByParticipant: {},
       localStream: null,

@@ -310,11 +310,15 @@ export class PeerConnectionWrapper {
 
   /** Swaps (or clears with null) the outgoing video for a kind without
    * renegotiating. With no `kind`, targets the first video sender (1:1 path
-   * that predates multi-sender). */
-  async replaceVideoTrack(track: MediaStreamTrack | null, kind?: VideoKind) {
+   * that predates multi-sender). Pass `stream` when the track belongs to a
+   * NEW MediaStream (a fresh screen share): a reused sender otherwise keeps
+   * signaling the old msid, and receivers that classify by stream id file the
+   * new share under the stale id — a black/missing screen tile. */
+  async replaceVideoTrack(track: MediaStreamTrack | null, kind?: VideoKind, stream?: MediaStream) {
     if (kind) {
       for (const [sender, state] of this.videoSenders) {
         if (state.kind === kind) {
+          if (stream) sender.setStreams?.(stream);
           await sender.replaceTrack(track);
           return;
         }
@@ -322,7 +326,25 @@ export class PeerConnectionWrapper {
       return;
     }
     const sender = this.pc.getSenders().find((s) => s.track?.kind === "video");
-    if (sender) await sender.replaceTrack(track);
+    if (sender) {
+      if (stream) sender.setStreams?.(stream);
+      await sender.replaceTrack(track);
+    }
+  }
+
+  /** Attaches an audio track, reusing an idle (previously detached) audio
+   * sender when one exists so repeated shares/watch cycles don't grow the
+   * SDP; the sender's msid is re-pointed at the given stream either way. */
+  attachAudioTrack(track: MediaStreamTrack, stream: MediaStream) {
+    const idle = this.pc
+      .getTransceivers()
+      .find((t) => t.sender.track === null && t.receiver.track?.kind === "audio");
+    if (idle) {
+      idle.sender.setStreams?.(stream);
+      void idle.sender.replaceTrack(track);
+    } else {
+      this.pc.addTrack(track, stream);
+    }
   }
 
   /** Detaches a specific outgoing track (audio or video) without stopping it. */

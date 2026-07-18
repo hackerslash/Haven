@@ -6,12 +6,13 @@ import type {
   CallInviteMessage,
   CallMediaStateMessage,
   CallRingingMessage,
+  CallScreenWatchMessage,
   RtcCandidateMessage,
   RtcDescriptionMessage,
 } from "../../types/wire";
 import { getOutbox, getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
-import { PeerConnectionWrapper } from "./PeerConnectionWrapper";
+import { PeerConnectionWrapper, type TierSpec } from "./PeerConnectionWrapper";
 import { SpeakingMonitor } from "./speakingMonitor";
 import {
   captureDisplay,
@@ -65,6 +66,11 @@ type CallContext = {
   wrapper: PeerConnectionWrapper | null;
   localStream: MediaStream | null;
   screenStream: MediaStream | null;
+  /** Quality spec of the live share, kept for watch-time attach. */
+  screenTierSpec: TierSpec;
+  /** Whether the remote opted in to watch our share — tracks are attached
+   * only then (Discord-style opt-in viewing). */
+  screenWatched: boolean;
   /** Remote tracks re-grouped by their wire (msid) stream: mic+camera vs
    * screen. A single <video> plays only a stream's FIRST video track, so if
    * screen shared a stream with the camera it would never render. */
@@ -487,6 +493,8 @@ export async function startCall(self: Identity, roomId: string, remoteId: string
     wrapper: null,
     localStream,
     screenStream: null,
+    screenTierSpec: undefined,
+    screenWatched: false,
     remoteMainStream: new MediaStream(),
     remoteScreenStream: new MediaStream(),
     remoteMainStreamId: null,
@@ -580,6 +588,8 @@ export async function acceptCall(self: Identity) {
     wrapper: null,
     localStream,
     screenStream: null,
+    screenTierSpec: undefined,
+    screenWatched: false,
     remoteMainStream: new MediaStream(),
     remoteScreenStream: new MediaStream(),
     remoteMainStreamId: null,
@@ -713,26 +723,11 @@ async function startScreenShareInner(
   // run at the same time and the remote can tell them apart. The tier
   // downscales from the native capture width to the selected resolution.
   const tierSpec = resolveScreenTierSpec(config, track?.getSettings().width);
-
-  if (call.wrapper.hasVideoSender("screen")) {
-    await call.wrapper.replaceVideoTrack(track, "screen");
-    if (ctx !== call) {
-      stream.getTracks().forEach((t) => t.stop());
-      releaseDisplayAudio();
-      return;
-    }
-    call.wrapper.applyVideoTier("screen", tierSpec);
-  } else {
-    call.wrapper.addVideoTrack(track, stream, "screen", 0, tierSpec);
-  }
+  call.screenTierSpec = tierSpec;
+  // Nothing is sent until the remote presses "Watch stream"
+  // (call_screen_watch) — the share is announced via sendMediaState below.
+  call.screenWatched = false;
   if (tierSpec !== "max") useCallStore.getState()._setScreenLinkBps(null);
-
-  // Forward the system audio the OS returned (never the mic — that's a
-  // separate call track). Rides the screen stream's msid so the receiver
-  // groups it with the screen, not the camera.
-  for (const audioTrack of stream.getAudioTracks()) {
-    call.wrapper.addTrack(audioTrack, stream);
-  }
 
   const store = useCallStore.getState();
   store._setScreenError(null);
@@ -741,11 +736,63 @@ async function startScreenShareInner(
   sendMediaState();
 }
 
+/** Attaches the live share's tracks (the remote asked to watch). */
+function attachScreenToRemote() {
+  const call = ctx;
+  if (!call?.wrapper || !call.screenStream) return;
+  const track = call.screenStream.getVideoTracks()[0];
+  if (track) {
+    if (call.wrapper.hasVideoSender("screen")) {
+      void call.wrapper.replaceVideoTrack(track, "screen", call.screenStream);
+      call.wrapper.applyVideoTier("screen", call.screenTierSpec);
+    } else {
+      call.wrapper.addVideoTrack(track, call.screenStream, "screen", 0, call.screenTierSpec);
+    }
+  }
+  // System audio only (never the mic); rides the screen stream's msid.
+  for (const audioTrack of call.screenStream.getAudioTracks()) {
+    call.wrapper.attachAudioTrack(audioTrack, call.screenStream);
+  }
+}
+
+/** Stops sending the share (the remote stopped watching). */
+function detachScreenFromRemote() {
+  const call = ctx;
+  if (!call?.wrapper) return;
+  void call.wrapper.replaceVideoTrack(null, "screen");
+  const screenAudio = new Set(call.screenStream?.getAudioTracks() ?? []);
+  for (const sender of call.wrapper.pc.getSenders()) {
+    if (sender.track && screenAudio.has(sender.track)) void sender.replaceTrack(null);
+  }
+}
+
+export function handleCallScreenWatch(_self: Identity, msg: CallScreenWatchMessage) {
+  if (!ctx || msg.fromId !== ctx.remoteId || msg.roomId !== ctx.roomId) return;
+  ctx.screenWatched = msg.watching;
+  if (!ctx.screenStream) return;
+  if (msg.watching) attachScreenToRemote();
+  else detachScreenFromRemote();
+}
+
+/** Viewer side: opt in/out of the remote's live share. */
+export function setScreenWatching(watching: boolean) {
+  const call = ctx;
+  if (!call) return;
+  sendToRemote(call.remoteId, {
+    type: "call_screen_watch",
+    roomId: call.roomId,
+    fromId: call.self.identityId,
+    watching,
+  } satisfies CallScreenWatchMessage);
+  useCallStore.getState()._setWatchingRemoteScreen(watching);
+}
+
 export async function stopScreenShare(source: ScreenStopSource = "user") {
   const call = ctx;
   if (!call) return;
   logScreenShare("stopping screen share", { source });
   const wasSharing = useCallStore.getState().screenOn;
+  call.screenWatched = false;
   const tracks = call.screenStream?.getTracks() ?? [];
   for (const track of tracks) {
     await call.wrapper?.detachTrack(track);
@@ -972,6 +1019,7 @@ export async function updateScreenShareQuality(config: ScreenShareQualityOption)
   const track = ctx.screenStream?.getVideoTracks()[0];
   if (track) await applyScreenTrackConstraints(track, config);
   const tierSpec = resolveScreenTierSpec(config, track?.getSettings().width);
+  ctx.screenTierSpec = tierSpec;
   ctx.wrapper.applyVideoTier("screen", tierSpec);
   if (tierSpec !== "max") useCallStore.getState()._setScreenLinkBps(null);
 }

@@ -44,6 +44,9 @@ type CallState = {
    * call_media_state arrives (then falls back to track-mute detection). */
   remoteCamOn: boolean | null;
   remoteScreenOn: boolean | null;
+  /** Whether we opted in to watch the remote's share (Discord-style: the
+   * stream flows only after "Watch stream"). */
+  watchingRemoteScreen: boolean;
   screenError: string | null;
   connectionState: RTCPeerConnectionState;
   quality: ConnectionQuality;
@@ -61,6 +64,7 @@ type CallState = {
   toggleCam: () => void;
   toggleScreenShare: () => Promise<void>;
   setScreenConfig: (config: ScreenShareQualityOption) => void;
+  setWatchingRemoteScreen: (watching: boolean) => void;
 
   // Internal setters, driven by callService (prefixed _ by convention).
   _setActiveCall: (call: ActiveCall) => void;
@@ -70,6 +74,7 @@ type CallState = {
   _setRemoteScreenStream: (stream: MediaStream | null) => void;
   _setMediaFlags: (micOn: boolean, camOn: boolean) => void;
   _setRemoteMediaState: (camOn: boolean, screenOn: boolean) => void;
+  _setWatchingRemoteScreen: (watching: boolean) => void;
   _setScreenOn: (on: boolean) => void;
   _setScreenError: (error: string | null) => void;
   _setConnectionState: (state: RTCPeerConnectionState) => void;
@@ -96,6 +101,7 @@ export const useCallStore = create<CallState>((set) => ({
   screenOn: false,
   remoteCamOn: null,
   remoteScreenOn: null,
+  watchingRemoteScreen: false,
   screenError: null,
   connectionState: "new",
   quality: "unknown",
@@ -148,6 +154,7 @@ export const useCallStore = create<CallState>((set) => ({
       void callService.updateScreenShareQuality(config);
     }
   },
+  setWatchingRemoteScreen: (watching) => callService.setScreenWatching(watching),
 
   _setActiveCall: (call) => set({ activeCall: call }),
   _setStatus: (status) =>
@@ -158,7 +165,14 @@ export const useCallStore = create<CallState>((set) => ({
     set((s) => ({ remoteScreenStream: stream, mediaVersion: s.mediaVersion + 1 })),
   _setMediaFlags: (micOn, camOn) => set({ micOn, camOn }),
   _setRemoteMediaState: (camOn, screenOn) =>
-    set((s) => ({ remoteCamOn: camOn, remoteScreenOn: screenOn, mediaVersion: s.mediaVersion + 1 })),
+    set((s) => ({
+      remoteCamOn: camOn,
+      remoteScreenOn: screenOn,
+      // Their share ended — the next one starts back at the Watch card.
+      ...(screenOn ? {} : { watchingRemoteScreen: false }),
+      mediaVersion: s.mediaVersion + 1,
+    })),
+  _setWatchingRemoteScreen: (watching) => set({ watchingRemoteScreen: watching }),
   _setScreenOn: (on) => set({ screenOn: on }),
   _setScreenError: (error) => set({ screenError: error }),
   _setConnectionState: (connectionState) => set({ connectionState }),
@@ -176,6 +190,7 @@ export const useCallStore = create<CallState>((set) => ({
       screenOn: false,
       remoteCamOn: null,
       remoteScreenOn: null,
+      watchingRemoteScreen: false,
       screenError: null,
       connectionState: "new",
       quality: "unknown",

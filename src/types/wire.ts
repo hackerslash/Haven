@@ -170,6 +170,26 @@ export type RoomCallMediaStateMessage = {
   camOn: boolean;
 };
 
+/** Discord-style opt-in screen viewing: a share is announced (slot claim /
+ * call_media_state) but video flows only to peers who asked to watch. Saves
+ * uplink for uninterested viewers and makes every attach a fresh, deliberate
+ * negotiation (re-watching doubles as a black-tile retry). */
+export type CallScreenWatchMessage = {
+  type: "call_screen_watch";
+  roomId: string;
+  fromId: string;
+  watching: boolean;
+};
+
+export type RoomScreenWatchMessage = {
+  type: "room_screen_watch";
+  roomId: string;
+  fromId: string;
+  /** Whose share this refers to. */
+  presenterId: string;
+  watching: boolean;
+};
+
 // --- Perfect-negotiation signaling (SDP + ICE), relayed over the PeerJS
 // data connection. `channel` says which session the message belongs to so a
 // 1:1 ring call and a group room mesh never cross-talk: "dm" routes to the
@@ -375,6 +395,8 @@ export type HavenMessage =
   | CallHangupMessage
   | CallMediaStateMessage
   | RoomCallMediaStateMessage
+  | CallScreenWatchMessage
+  | RoomScreenWatchMessage
   | RtcDescriptionMessage
   | RtcCandidateMessage
   | RoomCallJoinMessage

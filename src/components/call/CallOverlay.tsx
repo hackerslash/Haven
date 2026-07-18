@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, MonitorUp, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
 import { useCallStore } from "../../stores/useCallStore";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useIdentityStore } from "../../stores/useIdentityStore";
@@ -31,6 +31,8 @@ export function CallOverlay() {
   const screenOn = useCallStore((s) => s.screenOn);
   const remoteCamOn = useCallStore((s) => s.remoteCamOn);
   const remoteScreenOn = useCallStore((s) => s.remoteScreenOn);
+  const watchingRemoteScreen = useCallStore((s) => s.watchingRemoteScreen);
+  const setWatchingRemoteScreen = useCallStore((s) => s.setWatchingRemoteScreen);
   const screenError = useCallStore((s) => s.screenError);
   const connectionState = useCallStore((s) => s.connectionState);
   const quality = useCallStore((s) => s.quality);
@@ -131,6 +133,10 @@ export function CallOverlay() {
   // otherwise leaves a frozen last frame.
   const remoteHasVideo = hasLiveVideo(remoteStream) && remoteCamOn !== false;
   const remoteScreenLive = hasLiveVideo(remoteScreenStream) && remoteScreenOn !== false;
+  // Viewing is opt-in: the share is announced via call_media_state, but the
+  // stream flows (and renders) only after "Watch stream".
+  const remoteSharing = remoteScreenOn === true;
+  const screenStageLive = watchingRemoteScreen && remoteScreenLive;
 
   const controls = (
     <CallControlBar>
@@ -192,16 +198,41 @@ export function CallOverlay() {
             />
           </div>
         )}
-        <div className="h-full w-full">
-          {remoteScreenLive ? (
-            <VideoTile
-              stream={remoteScreenStream}
-              label={`${remoteName} (screen)`}
-              participantId={activeCall.remoteId}
-              hasVideo
-              quality={quality}
-              fit="fill"
-            />
+        <div className="relative h-full w-full">
+          {remoteSharing ? (
+            screenStageLive ? (
+              <>
+                <VideoTile
+                  stream={remoteScreenStream}
+                  label={`${remoteName} (screen)`}
+                  participantId={activeCall.remoteId}
+                  hasVideo
+                  quality={quality}
+                  fit="fill"
+                />
+                <button
+                  onClick={() => setWatchingRemoteScreen(false)}
+                  className="absolute left-2 top-2 z-20 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/75"
+                >
+                  Stop watching
+                </button>
+              </>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-lg bg-black ring-1 ring-border/50">
+                <MonitorUp size={28} className="text-text-secondary" aria-hidden="true" />
+                <p className="text-sm text-text-secondary">{remoteName} is presenting</p>
+                {watchingRemoteScreen ? (
+                  <p className="text-xs text-text-muted">Connecting…</p>
+                ) : (
+                  <button
+                    onClick={() => setWatchingRemoteScreen(true)}
+                    className="rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-hover"
+                  >
+                    Watch stream
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <VideoTile
               stream={remoteStream}
@@ -219,7 +250,7 @@ export function CallOverlay() {
             stage) above the local preview. Width scales with the overlay so
             small windows get a small PiP instead of one covering the stage. */}
         <div className="absolute bottom-20 right-4 z-20 flex w-[clamp(88px,25%,176px)] flex-col gap-2">
-          {remoteScreenLive && (
+          {remoteSharing && (
             <div className="aspect-video w-full">
               <VideoTile
                 stream={remoteStream}
