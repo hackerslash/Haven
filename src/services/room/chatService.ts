@@ -14,7 +14,7 @@ import { getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import { bytesToBase64, base64ToBytes, utf8ToBase64 } from "../../lib/base64";
 import * as fileRepo from "../db/fileRepo";
-import { formatHlc, tickLocal, tickReceive, type Hlc } from "../../lib/hlc";
+import { tickLocal, tickReceive, type Hlc } from "../../lib/hlc";
 
 /** Hard cap on attachment size. base64 inflates ~33% and whole files are held
  * in memory during transfer + stored in SQLite, so keep this modest. Enforced
@@ -214,6 +214,15 @@ async function verifyAndStore(wire: ChatMessageWire, physicalNow: number, selfId
   const contact = await rosterRepo.getContact(wire.authorId);
   if (!contact) return null; // never store messages from untrusted identities
 
+  // A DM room only ever holds `self` and one contact, and its id is a pure
+  // function of both. Reject any message whose author isn't a party to the DM
+  // it claims — otherwise a trusted contact could forge a message into our
+  // private DM with a third party (its id is publicly derivable).
+  if (wire.roomId.startsWith("dm_")) {
+    const expected = await dmRoomId(selfId, wire.authorId);
+    if (wire.roomId !== expected) return null;
+  }
+
   const valid = await identityService.verify(
     contact.publicKey,
     utf8ToBase64(canonicalMessage(wire)),
@@ -264,6 +273,12 @@ export async function handleFileChunk(msg: FileChunkMessage): Promise<void> {
   // Reject oversize transfers up front (base64 length ≈ 4/3 × bytes), before
   // buffering any chunks — a malicious/buggy sender can't exhaust memory.
   if (msg.totalChunks * CHUNK_SIZE * 0.75 > MAX_FILE_SIZE) return;
+  // The cap above bounds the declared chunk count, but a single chunk can still
+  // carry an arbitrarily large payload; bound each chunk to CHUNK_SIZE and
+  // reject out-of-range indices (which would otherwise allocate a huge sparse
+  // array and assemble a corrupt file).
+  if (msg.data.length > CHUNK_SIZE) return;
+  if (msg.chunkIndex < 0 || msg.chunkIndex >= msg.totalChunks) return;
 
   let state = incomingFiles.get(msg.fileId);
   if (!state) {
@@ -315,8 +330,17 @@ export async function handleFileChunk(msg: FileChunkMessage): Promise<void> {
 export async function handleRoomSyncRequest(
   selfId: string,
   fromPeerId: string,
+  requesterId: string,
   msg: RoomSyncRequestMessage,
 ): Promise<boolean> {
+  // Don't serve DM history to anyone but the other party to that DM — the room
+  // id is publicly derivable, so without this any trusted contact could pull
+  // our private conversation with a third party.
+  if (msg.roomId.startsWith("dm_")) {
+    const expected = await dmRoomId(selfId, requesterId);
+    if (msg.roomId !== expected) return false;
+  }
+
   const flipped = await messageRepo.markDeliveredUpTo(
     msg.roomId,
     selfId,
@@ -355,11 +379,3 @@ export async function requestRoomSync(roomId: string, toPeerId: string): Promise
   const request: RoomSyncRequestMessage = { type: "room_sync_request", roomId, have };
   getPeerRegistry().send(toPeerId, request);
 }
-
-// Exposed for tests / diagnostics.
-export function _resetClockForTest(seed: Hlc | null = null) {
-  clock = seed;
-  clockReady = Promise.resolve();
-}
-
-export { formatHlc };

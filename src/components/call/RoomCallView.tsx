@@ -8,6 +8,7 @@ import { ScreenShareButton } from "./ScreenShareButton";
 import { ScreenQualityBadge } from "./ScreenQualityBadge";
 import { IconButton } from "../ui/IconButton";
 import type { ConnectionQuality } from "../../services/call/PeerConnectionWrapper";
+import { QUALITY_DOT } from "./qualityDot";
 import { hasLiveVideo } from "../../lib/mediaTracks";
 
 function useNameLookup() {
@@ -53,12 +54,6 @@ export function RoomCallView() {
   const screenShares = Object.entries(screenStreamsByParticipant);
   const hasScreens = screenShares.length > 0;
 
-  const QUALITY_DOT: Record<string, string> = {
-    good: "bg-success",
-    fair: "bg-warning",
-    poor: "bg-danger",
-    unknown: "bg-text-secondary",
-  };
   function dotFor(id: string): string {
     if (id === self?.identityId) return "bg-success";
     return QUALITY_DOT[qualityByParticipant[id] ?? "unknown"];

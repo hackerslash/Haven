@@ -44,9 +44,12 @@ export function useFocusTrap<T extends HTMLElement>(onClose?: () => void) {
       }
     }
 
-    container.addEventListener("keydown", onKeyDown);
+    // Listen on document, not the container: clicking non-focusable modal
+    // content moves focus to <body>, whose key events never reach a
+    // container-scoped listener, which would break Escape and the Tab trap.
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      container.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown);
       previouslyFocused?.focus?.();
     };
   }, []);

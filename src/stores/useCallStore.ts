@@ -118,8 +118,16 @@ export const useCallStore = create<CallState>((set) => ({
     }
   },
   toggleScreenShare: async () => {
-    if (useCallStore.getState().screenOn) await callService.stopScreenShare();
-    else await callService.startScreenShare(useCallStore.getState().screenConfig);
+    try {
+      if (useCallStore.getState().screenOn) await callService.stopScreenShare();
+      else await callService.startScreenShare(useCallStore.getState().screenConfig);
+    } catch (err) {
+      // Post-capture awaits (replaceTrack on a closed pc) can reject; the
+      // component fires this with `void`, so swallow it here rather than let it
+      // surface as an unhandled rejection.
+      console.error("Failed to toggle screen share:", err);
+      toast.error("Screen share failed", "Couldn't change the screen share.");
+    }
   },
   setScreenConfig: (config) => {
     set({ screenConfig: config });

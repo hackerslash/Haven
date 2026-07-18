@@ -59,6 +59,7 @@ export function useGlobalShortcuts({ onOpenSettings }: Options) {
   useEffect(() => {
     if (!pushToTalk) return;
     let registered = false;
+    let cancelled = false;
 
     void register(PTT_SHORTCUT, (event) => {
       if (!anyCallActive()) return;
@@ -67,6 +68,9 @@ export function useGlobalShortcuts({ onOpenSettings }: Options) {
     })
       .then(() => {
         registered = true;
+        // Cleanup ran before registration resolved — unregister now, otherwise
+        // the OS-global shortcut stays captured with the setting off.
+        if (cancelled) void unregister(PTT_SHORTCUT).catch(() => {});
       })
       .catch((err) => {
         console.warn("failed to register push-to-talk shortcut", err);
@@ -78,6 +82,7 @@ export function useGlobalShortcuts({ onOpenSettings }: Options) {
       });
 
     return () => {
+      cancelled = true;
       if (registered) void unregister(PTT_SHORTCUT).catch(() => {});
     };
   }, [pushToTalk]);

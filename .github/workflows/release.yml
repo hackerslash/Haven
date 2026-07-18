@@ -1,6 +1,6 @@
 name: Release
 
-# Builds Haven on native macOS + Windows runners and publishes the installers
+# Builds Haven on native macOS, Windows, and Linux runners and publishes the installers
 # to a GitHub Release. Triggered by pushing a version tag (e.g. v1).
 on:
   push:

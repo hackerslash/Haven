@@ -10,6 +10,7 @@ import { ScreenQualityBadge } from "./ScreenQualityBadge";
 import { IconButton } from "../ui/IconButton";
 import { Avatar } from "../ui/Avatar";
 import { cx } from "../../lib/cx";
+import { QUALITY_DOT } from "./qualityDot";
 import { hasLiveVideo } from "../../lib/mediaTracks";
 import { useRingtone } from "../../hooks/useRingtone";
 
@@ -22,7 +23,10 @@ export function CallOverlay() {
   const activeCall = useCallStore((s) => s.activeCall);
   const localStream = useCallStore((s) => s.localStream);
   const remoteStream = useCallStore((s) => s.remoteStream);
-  const mediaVersion = useCallStore((s) => s.mediaVersion);
+  // Subscribe to mediaVersion so a track mute/unmute re-renders the tiles (their
+  // <video> reattaches srcObject) without remounting them via a changing key —
+  // a key change destroys the element, black-flashing and dropping tile state.
+  useCallStore((s) => s.mediaVersion);
   const micOn = useCallStore((s) => s.micOn);
   const camOn = useCallStore((s) => s.camOn);
   const screenOn = useCallStore((s) => s.screenOn);
@@ -120,13 +124,6 @@ export function CallOverlay() {
                 ? "Connected"
                 : connectionState;
 
-  const QUALITY_DOT: Record<string, string> = {
-    good: "bg-success",
-    fair: "bg-warning",
-    poor: "bg-danger",
-    unknown: "bg-text-muted",
-  };
-
   const localHasVideo = (camOn || screenOn) && (localStream?.getVideoTracks().length ?? 0) > 0;
 
   return (
@@ -166,7 +163,7 @@ export function CallOverlay() {
             />
           </div>
         )}
-        <div key={`remote-${mediaVersion}`} className="h-full w-full max-w-5xl">
+        <div className="h-full w-full max-w-5xl">
           <VideoTile
             stream={remoteStream}
             label={remoteName}
@@ -178,7 +175,7 @@ export function CallOverlay() {
           />
         </div>
         {/* Local picture-in-picture */}
-        <div key={`local-${mediaVersion}`} className="absolute bottom-28 right-6 h-32 w-48">
+        <div className="absolute bottom-28 right-6 h-32 w-48">
           <VideoTile
             stream={localStream}
             label={screenOn ? "You (screen)" : "You"}

@@ -119,12 +119,8 @@ export async function handleFriendRequest(self: Identity, msg: FriendRequestMess
   // declined sender can resend the same request forever, each one recreating
   // a fresh pending row and re-notifying us (there's no "unblock" affordance,
   // so a decline should stay final).
-  const existing = await friendRequestsRepo.findByFromId(msg.fromId);
-  if (
-    existing &&
-    existing.direction === "incoming" &&
-    (existing.status === "pending" || existing.status === "declined")
-  ) {
+  const existing = await friendRequestsRepo.findByFromId(msg.fromId, "incoming");
+  if (existing && (existing.status === "pending" || existing.status === "declined")) {
     return;
   }
 
@@ -207,8 +203,8 @@ export async function handleFriendRequestResponse(
   const derivedId = await computeIdentityId(msg.fromPubKey);
   if (derivedId !== msg.fromId) return null;
 
-  const existing = await friendRequestsRepo.findByFromId(msg.fromId);
-  if (!existing || existing.direction !== "outgoing") return null;
+  const existing = await friendRequestsRepo.findByFromId(msg.fromId, "outgoing");
+  if (!existing) return null;
 
   if (msg.accepted) {
     const now = Date.now();

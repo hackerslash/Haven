@@ -4,6 +4,7 @@ import { Check, ChevronDown, MonitorUp } from "lucide-react";
 import type { ConnectionQuality } from "../../services/call/PeerConnectionWrapper";
 import { SCREEN_SHARE_OPTIONS, type ScreenShareQualityOption } from "../../services/call/screenShareConfig";
 import { cx } from "../../lib/cx";
+import { QUALITY_DOT, QUALITY_LABEL } from "./qualityDot";
 
 type ScreenQualityBadgeProps = {
   currentConfig: ScreenShareQualityOption;
@@ -12,13 +13,6 @@ type ScreenQualityBadgeProps = {
   quality?: ConnectionQuality;
   /** Max mode's live link-tested bitrate cap (bps), if Max is active. */
   linkBps?: number | null;
-};
-
-const QUALITY_META: Record<ConnectionQuality, { dot: string; label: string }> = {
-  good: { dot: "bg-success", label: "Good" },
-  fair: { dot: "bg-warning", label: "Fair" },
-  poor: { dot: "bg-danger", label: "Poor" },
-  unknown: { dot: "bg-text-muted", label: "Measuring…" },
 };
 
 function formatMbps(bps: number): string {
@@ -66,7 +60,7 @@ export function ScreenQualityBadge({ currentConfig, onConfigChange, quality, lin
   }, [open]);
 
   const info = describe(currentConfig, linkBps);
-  const q = QUALITY_META[quality ?? "unknown"];
+  const q = { dot: QUALITY_DOT[quality ?? "unknown"], label: QUALITY_LABEL[quality ?? "unknown"] };
 
   return (
     <div ref={rootRef} className="relative">

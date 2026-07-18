@@ -12,7 +12,6 @@ type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** Pressed-state styling (mirrors aria-pressed). */
   active?: boolean;
   tooltip?: boolean;
-  tooltipSide?: "top" | "bottom" | "left" | "right";
 };
 
 const SIZE: Record<NonNullable<IconButtonProps["size"]>, { btn: string; icon: number }> = {
@@ -35,7 +34,6 @@ export function IconButton({
   variant = "ghost",
   active = false,
   tooltip = true,
-  tooltipSide = "top",
   className,
   ...rest
 }: IconButtonProps) {
@@ -56,11 +54,5 @@ export function IconButton({
       <Icon size={SIZE[size].icon} aria-hidden="true" />
     </button>
   );
-  return tooltip ? (
-    <Tooltip label={label} side={tooltipSide}>
-      {button}
-    </Tooltip>
-  ) : (
-    button
-  );
+  return tooltip ? <Tooltip label={label}>{button}</Tooltip> : button;
 }

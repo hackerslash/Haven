@@ -111,13 +111,3 @@ export async function applyLeave(roomId: string, contactId: string, at: number):
     [roomId, contactId, at],
   );
 }
-
-export async function isActiveMember(roomId: string, contactId: string): Promise<boolean> {
-  const db = await getDb();
-  const rows = await db.select<{ n: number }[]>(
-    `SELECT COUNT(*) AS n FROM room_members
-      WHERE room_id = $1 AND contact_id = $2 AND left_at IS NULL`,
-    [roomId, contactId],
-  );
-  return (rows[0]?.n ?? 0) > 0;
-}

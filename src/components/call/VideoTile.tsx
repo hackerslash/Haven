@@ -6,6 +6,7 @@ import type { ConnectionQuality } from "../../services/call/PeerConnectionWrappe
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { Avatar } from "../ui/Avatar";
 import { cx } from "../../lib/cx";
+import { QUALITY_DOT } from "./qualityDot";
 
 /** setSinkId exists in Chromium-based browsers; declare on interface if needed. */
 declare global {
@@ -28,13 +29,6 @@ type VideoTileProps = {
   participantId?: string;
   quality?: ConnectionQuality;
   speaking?: boolean;
-};
-
-const QUALITY_DOT: Record<ConnectionQuality, string> = {
-  good: "bg-success",
-  fair: "bg-warning",
-  poor: "bg-danger",
-  unknown: "bg-text-muted",
 };
 
 function VideoInner({ stream, muted, mirror, label, hasVideo, participantId }: VideoTileProps) {
@@ -100,13 +94,15 @@ export function VideoTile({
       >
         {speaking && (
           <motion.div
-            layoutId={`speaking-ring-${label}`}
+            layoutId={`speaking-ring-${participantId ?? label}`}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="absolute inset-0 z-10 rounded-lg border-2 border-success"
           />
         )}
-        <VideoInner {...inner} />
+        {/* Mute the inline copy while the fullscreen portal is open, else a
+            remote tile plays its audio through two <video> elements at once. */}
+        <VideoInner {...inner} muted={inner.muted || expanded} />
         {quality && quality !== "unknown" && (
           <span
             className={cx("absolute left-2 top-2 h-2 w-2 rounded-full", QUALITY_DOT[quality])}

@@ -4,15 +4,13 @@ import { cx } from "../../lib/cx";
 type AvatarProps = {
   id: string;
   name: string;
-  size?: "xs" | "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "xl";
   presence?: Presence;
 };
 
 const SIZE: Record<NonNullable<AvatarProps["size"]>, { box: string; text: string; dot: string }> = {
-  xs: { box: "h-5 w-5", text: "text-[9px]", dot: "h-1.5 w-1.5" },
   sm: { box: "h-6 w-6", text: "text-[10px]", dot: "h-2 w-2" },
   md: { box: "h-8 w-8", text: "text-xs", dot: "h-2.5 w-2.5" },
-  lg: { box: "h-10 w-10", text: "text-sm", dot: "h-3 w-3" },
   xl: { box: "h-20 w-20", text: "text-2xl", dot: "h-5 w-5" },
 };
 

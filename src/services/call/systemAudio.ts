@@ -19,12 +19,25 @@ let workletNode: AudioWorkletNode | null = null;
 let destination: MediaStreamAudioDestinationNode | null = null;
 let channel: Channel<string> | null = null;
 
+// Serializes start/stop so a stop that races a subsequent start can neither
+// tear down the new capture's audio graph nor let its native `sysaudio_stop`
+// land after the new `sysaudio_start` and kill it.
+let sysaudioOp: Promise<unknown> = Promise.resolve();
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const run = sysaudioOp.then(fn, fn);
+  sysaudioOp = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 export function isMacOS(): boolean {
   const ua = navigator.userAgent;
   return ua.includes("Macintosh") || ua.includes("Mac OS");
 }
 
-export function isWindows(): boolean {
+function isWindows(): boolean {
   return navigator.userAgent.includes("Windows");
 }
 
@@ -56,8 +69,12 @@ function base64ToFloat32(b64: string): Float32Array {
 
 /** Starts native capture and returns a live system-audio track, or null if
  * unsupported / unavailable. */
-export async function startSystemAudioTrack(): Promise<MediaStreamTrack | null> {
-  if (!usesNativeSystemAudio()) return null;
+export function startSystemAudioTrack(): Promise<MediaStreamTrack | null> {
+  if (!usesNativeSystemAudio()) return Promise.resolve(null);
+  return serialize(startSystemAudioTrackInner);
+}
+
+async function startSystemAudioTrackInner(): Promise<MediaStreamTrack | null> {
   try {
     const ctx = new AudioContext({ sampleRate: 48_000 });
     await ctx.audioWorklet.addModule("/sysaudio-worklet.js");
@@ -86,24 +103,35 @@ export async function startSystemAudioTrack(): Promise<MediaStreamTrack | null> 
     return dest.stream.getAudioTracks()[0] ?? null;
   } catch (err) {
     console.warn("[systemAudio] native capture unavailable:", err);
-    await stopSystemAudioTrack();
+    await stopSystemAudioTrackInner();
     return null;
   }
 }
 
-export async function stopSystemAudioTrack(): Promise<void> {
+export function stopSystemAudioTrack(): Promise<void> {
+  return serialize(stopSystemAudioTrackInner);
+}
+
+async function stopSystemAudioTrackInner(): Promise<void> {
+  // Detach the module singletons up front so a start racing this stop installs
+  // fresh state that we won't then tear down out from under it.
+  const ctx = audioCtx;
+  const node = workletNode;
+  const dest = destination;
+  const ch = channel;
+  audioCtx = null;
+  workletNode = null;
+  destination = null;
+  channel = null;
+
+  if (ch) ch.onmessage = () => {};
   try {
     await invoke("sysaudio_stop");
   } catch {
     // ignore — best effort
   }
-  if (channel) channel.onmessage = () => {};
-  workletNode?.port.postMessage("flush");
-  workletNode?.disconnect();
-  destination?.disconnect();
-  if (audioCtx) await audioCtx.close().catch(() => {});
-  audioCtx = null;
-  workletNode = null;
-  destination = null;
-  channel = null;
+  node?.port.postMessage("flush");
+  node?.disconnect();
+  dest?.disconnect();
+  if (ctx) await ctx.close().catch(() => {});
 }

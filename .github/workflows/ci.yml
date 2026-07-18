@@ -57,7 +57,7 @@ jobs:
         run: pnpm install
 
       - name: Typecheck
-        run: pnpm exec tsc --noEmit
+        run: pnpm typecheck
 
       - name: Frontend tests
         run: pnpm test

@@ -63,11 +63,19 @@ export async function setStatus(id: string, status: "accepted" | "declined"): Pr
   await db.execute("UPDATE friend_requests SET status = ?1 WHERE id = ?2", [status, id]);
 }
 
-export async function findByFromId(fromId: string): Promise<FriendRequest | null> {
+/** Looks up the newest request for a party in a specific direction. Direction
+ * is required because mutual requests (they requested us while we requested
+ * them) put an incoming and an outgoing pending row side by side, and a
+ * direction-blind lookup would return whichever is newer — dropping a valid
+ * acceptance of our outgoing request, or missing a prior incoming decline. */
+export async function findByFromId(
+  fromId: string,
+  direction: "incoming" | "outgoing",
+): Promise<FriendRequest | null> {
   const db = await getDb();
   const rows = await db.select<FriendRequestRow[]>(
-    "SELECT * FROM friend_requests WHERE from_id = ?1 ORDER BY created_at DESC LIMIT 1",
-    [fromId]
+    "SELECT * FROM friend_requests WHERE from_id = ?1 AND direction = ?2 ORDER BY created_at DESC LIMIT 1",
+    [fromId, direction]
   );
   return rows.length > 0 ? fromRow(rows[0]) : null;
 }

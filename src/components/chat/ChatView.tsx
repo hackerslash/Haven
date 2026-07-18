@@ -41,15 +41,23 @@ export function ChatView({ contactId }: ChatViewProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let myRoomId: string | null = null;
     if (!self) return;
     void dmRoomId(self.identityId, contactId).then((id) => {
       if (cancelled) return;
+      myRoomId = id;
       setRoomId(id);
       setActiveRoom(id);
       void loadMessages(id);
     });
     return () => {
       cancelled = true;
+      // Clear the active room so messages aren't silently marked read while the
+      // user is elsewhere — but only if a newer view hasn't already claimed it
+      // (the enter/exit crossfade can mount the next view before this unmounts).
+      if (myRoomId && useRoomStore.getState().activeRoomId === myRoomId) {
+        setActiveRoom(null);
+      }
     };
   }, [self, contactId, loadMessages, setActiveRoom]);
 

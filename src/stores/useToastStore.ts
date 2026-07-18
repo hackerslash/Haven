@@ -2,20 +2,11 @@ import { create } from "zustand";
 
 export type ToastVariant = "info" | "success" | "error" | "warning";
 
-export type ToastAction = {
-  label: string;
-  onClick: () => void;
-  variant?: "primary" | "danger";
-};
-
 export type Toast = {
   id: string;
   variant: ToastVariant;
   title: string;
   description?: string;
-  /** ms until auto-dismiss; null = sticky (e.g. an incoming-call prompt). */
-  duration?: number | null;
-  actions?: ToastAction[];
 };
 
 type ToastState = {
@@ -49,6 +40,5 @@ export const toast = {
     useToastStore.getState().add({ variant: "error", title, description }),
   warning: (title: string, description?: string) =>
     useToastStore.getState().add({ variant: "warning", title, description }),
-  custom: (t: Omit<Toast, "id"> & { id?: string }) => useToastStore.getState().add(t),
   dismiss: (id: string) => useToastStore.getState().dismiss(id),
 };

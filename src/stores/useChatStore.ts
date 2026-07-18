@@ -16,17 +16,30 @@ type ChatState = {
   /** Bridge-called: a message arrived/backfilled from the network and was
    * already persisted; reflect it in the in-memory list if the room is loaded. */
   ingestMessage: (message: Message) => void;
+  /** Bridge-called: like `ingestMessage` but for a batch (sync backfill) — one
+   * merge + sort per room and a single room-list refresh. */
+  ingestMessages: (messages: Message[]) => void;
   /** Bridge-called: a delivery receipt arrived; the repo row is already updated. */
   updateMessageStatus: (roomId: string, messageId: string, status: DeliveryStatus) => void;
   /** Reloads a room's messages from the DB, but only if it's already loaded. */
   refreshRoom: (roomId: string) => Promise<void>;
 };
 
+const byHlc = (a: Message, b: Message) => (a.hlc < b.hlc ? -1 : a.hlc > b.hlc ? 1 : 0);
+
 function insertOrdered(list: Message[], message: Message): Message[] {
   if (list.some((m) => m.id === message.id)) return list;
-  const next = [...list, message];
-  next.sort((a, b) => (a.hlc < b.hlc ? -1 : a.hlc > b.hlc ? 1 : 0));
-  return next;
+  return [...list, message].sort(byHlc);
+}
+
+/** Merges two id-keyed message lists (deduped, hlc-ordered); `fresh` wins on
+ * id conflicts. Used so a slow reload can't clobber messages appended while its
+ * query was in flight. */
+function mergeById(existing: Message[], fresh: Message[]): Message[] {
+  const byId = new Map<string, Message>();
+  for (const m of existing) byId.set(m.id, m);
+  for (const m of fresh) byId.set(m.id, m);
+  return [...byId.values()].sort(byHlc);
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -35,7 +48,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadMessages: async (roomId) => {
     const messages = await messageRepo.listByRoom(roomId);
-    set((state) => ({ messagesByRoom: { ...state.messagesByRoom, [roomId]: messages } }));
+    set((state) => {
+      const existing = state.messagesByRoom[roomId];
+      // Merge, don't overwrite: a message may have been ingested from the
+      // network while this query was in flight, and it must not vanish.
+      const next = existing ? mergeById(existing, messages) : messages;
+      return { messagesByRoom: { ...state.messagesByRoom, [roomId]: next } };
+    });
   },
 
   sendMessage: async (roomId, memberIds, body, file) => {
@@ -83,15 +102,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({ draftByRoom: { ...state.draftByRoom, [roomId]: draft } })),
 
   ingestMessage: (message) => {
-    const loaded = get().messagesByRoom[message.roomId];
-    if (loaded) {
-      set((state) => ({
-        messagesByRoom: {
-          ...state.messagesByRoom,
-          [message.roomId]: insertOrdered(loaded, message),
-        },
-      }));
-    }
+    get().ingestMessages([message]);
+  },
+
+  ingestMessages: (messages) => {
+    if (messages.length === 0) return;
+    set((state) => {
+      const next = { ...state.messagesByRoom };
+      let changed = false;
+      // Group additions per already-loaded room, then sort each room once.
+      for (const roomId of new Set(messages.map((m) => m.roomId))) {
+        const loaded = next[roomId];
+        if (!loaded) continue;
+        const seen = new Set(loaded.map((m) => m.id));
+        const additions = messages.filter((m) => m.roomId === roomId && !seen.has(m.id));
+        if (additions.length === 0) continue;
+        next[roomId] = [...loaded, ...additions].sort(byHlc);
+        changed = true;
+      }
+      return changed ? { messagesByRoom: next } : state;
+    });
     void useRoomStore.getState().loadRooms();
   },
 

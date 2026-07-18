@@ -3,66 +3,24 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 pub const DB_URL: &str = "sqlite:haven.db";
 
 pub fn migrations() -> Vec<Migration> {
-    vec![
-        Migration {
-            version: 1,
-            description: "identity",
-            sql: include_str!("../migrations/0001_identity.sql"),
+    const DEFS: &[(i64, &str, &str)] = &[
+        (1, "identity", include_str!("../migrations/0001_identity.sql")),
+        (2, "roster", include_str!("../migrations/0002_roster.sql")),
+        (3, "rooms", include_str!("../migrations/0003_rooms.sql")),
+        (4, "messages", include_str!("../migrations/0004_messages.sql")),
+        (5, "settings", include_str!("../migrations/0005_settings.sql")),
+        (6, "room_membership_v2", include_str!("../migrations/0006_room_membership_v2.sql")),
+        (7, "read_state", include_str!("../migrations/0007_read_state.sql")),
+        (8, "friend_requests", include_str!("../migrations/0008_friend_requests.sql")),
+        (9, "message_attachments", include_str!("../migrations/0009_message_attachments.sql")),
+        (10, "friend_requests_dedup", include_str!("../migrations/0010_friend_requests_dedup.sql")),
+    ];
+    DEFS.iter()
+        .map(|&(version, description, sql)| Migration {
+            version,
+            description,
+            sql,
             kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 2,
-            description: "roster",
-            sql: include_str!("../migrations/0002_roster.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 3,
-            description: "rooms",
-            sql: include_str!("../migrations/0003_rooms.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 4,
-            description: "messages",
-            sql: include_str!("../migrations/0004_messages.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 5,
-            description: "settings",
-            sql: include_str!("../migrations/0005_settings.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 6,
-            description: "room_membership_v2",
-            sql: include_str!("../migrations/0006_room_membership_v2.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 7,
-            description: "read_state",
-            sql: include_str!("../migrations/0007_read_state.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 8,
-            description: "friend_requests",
-            sql: include_str!("../migrations/0008_friend_requests.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 9,
-            description: "message_attachments",
-            sql: include_str!("../migrations/0009_message_attachments.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 10,
-            description: "friend_requests_dedup",
-            sql: include_str!("../migrations/0010_friend_requests_dedup.sql"),
-            kind: MigrationKind::Up,
-        },
-    ]
+        })
+        .collect()
 }

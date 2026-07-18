@@ -1,10 +1,14 @@
 import { getDb } from "./client";
 
-/** Advances the read cursor for a room (never moves it backwards). */
+/** Advances the read cursor for a room (never moves it backwards). The cursor
+ * is raised to at least the newest message's `sent_at`: unread counts compare
+ * against that remote-authored timestamp, so a peer whose clock runs ahead
+ * would otherwise leave a phantom unread that the local `at` can't clear. */
 export async function markRead(roomId: string, at: number): Promise<void> {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO room_read_state (room_id, last_read_at) VALUES ($1, $2)
+    `INSERT INTO room_read_state (room_id, last_read_at)
+     VALUES ($1, MAX($2, COALESCE((SELECT MAX(sent_at) FROM messages WHERE room_id = $1), 0)))
      ON CONFLICT(room_id) DO UPDATE SET last_read_at = MAX(last_read_at, excluded.last_read_at)`,
     [roomId, at],
   );

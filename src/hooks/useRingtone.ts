@@ -2,18 +2,12 @@ import { useEffect, useRef } from 'react';
 
 export function useRingtone(type: 'incoming' | 'outgoing' | null) {
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   useEffect(() => {
-    if (!type) {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close();
-        audioCtxRef.current = null;
-      }
-      return;
-    }
+    // The previous effect's cleanup already tore down any live context, so
+    // there's nothing to stop here — just don't start one when idle.
+    if (!type) return;
 
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -27,7 +21,6 @@ export function useRingtone(type: 'incoming' | 'outgoing' | null) {
       const gainNode = ctx.createGain();
       gainNode.connect(ctx.destination);
       gainNode.gain.value = 0;
-      gainNodeRef.current = gainNode;
 
       const osc = ctx.createOscillator();
       osc.type = 'sine';
@@ -42,7 +35,6 @@ export function useRingtone(type: 'incoming' | 'outgoing' | null) {
       
       osc.connect(gainNode);
       osc.start();
-      oscillatorRef.current = osc;
 
       const playRing = () => {
         if (!audioCtxRef.current) return;

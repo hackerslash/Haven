@@ -128,10 +128,38 @@ pub fn identity_delete_keypair() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    // Exercises the exact command functions the onboarding UI calls, against
-    // the real OS keychain, and always cleans up afterwards so it never
-    // leaves a stray identity behind for a real dev run to trip over.
+    // Pure crypto path — sign/verify, tamper, and wrong-key rejection with no
+    // keychain access, so it's safe to run unconditionally.
     #[test]
+    fn sign_verify_pure() {
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let identity = to_public_identity(&signing_key);
+
+        let message = STANDARD.encode(b"hello haven");
+        let raw = STANDARD.decode(&message).unwrap();
+        let signature = STANDARD.encode(signing_key.sign(&raw).to_bytes());
+
+        assert!(
+            identity_verify(identity.public_key.clone(), message.clone(), signature.clone())
+                .unwrap()
+        );
+
+        let tampered = STANDARD.encode(b"tampered payload");
+        assert!(!identity_verify(identity.public_key.clone(), tampered, signature.clone()).unwrap());
+
+        let other = SigningKey::generate(&mut OsRng);
+        let wrong_public_key = STANDARD.encode(other.verifying_key().to_bytes());
+        assert!(!identity_verify(wrong_public_key, message, signature).unwrap());
+
+        assert_eq!(identity.identity_id, to_public_identity(&signing_key).identity_id);
+    }
+
+    // Exercises the exact command functions the onboarding UI calls, against
+    // the real OS keychain, and always cleans up afterwards. IGNORED by default:
+    // it deletes any existing identity on this machine (the private key is
+    // unrecoverable), so it must be opt-in via `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "mutates the real OS keychain; deletes this device's identity"]
     fn generate_sign_verify_roundtrip() {
         identity_delete_keypair().unwrap();
         assert!(!identity_has_keypair().unwrap());

@@ -19,11 +19,23 @@ type RosterState = {
   setPresence: (identityId: string, presence: Presence) => void;
 };
 
+// A DM room id is a stable SHA-256 of the two identity ids, so cache it per
+// contact — loadRoster runs on every incoming roster_sync, and recomputing a
+// digest for every contact each time is pure waste.
+const dmRoomIdCache = new Map<string, string>();
+
 async function buildDmRoomMap(contacts: RosterContact[]): Promise<Record<string, string>> {
   const selfId = useIdentityStore.getState().self?.identityId;
   if (!selfId) return {};
   const entries = await Promise.all(
-    contacts.map(async (c) => [c.identityId, await dmRoomId(selfId, c.identityId)] as const),
+    contacts.map(async (c) => {
+      let roomId = dmRoomIdCache.get(c.identityId);
+      if (!roomId) {
+        roomId = await dmRoomId(selfId, c.identityId);
+        dmRoomIdCache.set(c.identityId, roomId);
+      }
+      return [c.identityId, roomId] as const;
+    }),
   );
   return Object.fromEntries(entries);
 }
@@ -47,7 +59,7 @@ async function loadContactsExcludingSelf(): Promise<RosterContact[]> {
   return contacts;
 }
 
-export const useRosterStore = create<RosterState>((set) => ({
+export const useRosterStore = create<RosterState>((set, get) => ({
   contactsById: {},
   presenceById: {},
   dmRoomIdByContact: {},
@@ -66,22 +78,19 @@ export const useRosterStore = create<RosterState>((set) => ({
 
   acceptInvite: async (inviteString: string) => {
     await rosterService.acceptInvite(requireSelf(), inviteString);
-    const contacts = await loadContactsExcludingSelf();
-    set({
-      contactsById: Object.fromEntries(contacts.map((c) => [c.identityId, c])),
-      dmRoomIdByContact: await buildDmRoomMap(contacts),
-    });
+    await get().loadRoster();
   },
 
   removeContact: async (contactId: string) => {
     await rosterService.removeContact(requireSelf(), contactId);
-    const contacts = await rosterRepo.listContacts();
-    set({
-      contactsById: Object.fromEntries(contacts.map((c) => [c.identityId, c])),
-    });
+    dmRoomIdCache.delete(contactId);
+    await get().loadRoster();
   },
 
   setPresence: (identityId: string, presence: Presence) => {
+    // The 2s discovery tick sets presence for every contact each pass; skip the
+    // state clone (and the re-render it triggers) when nothing actually changed.
+    if (get().presenceById[identityId] === presence) return;
     set((state) => ({
       presenceById: { ...state.presenceById, [identityId]: presence },
     }));

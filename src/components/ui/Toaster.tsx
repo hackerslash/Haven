@@ -33,10 +33,9 @@ function ToastCard({ toast }: { toast: Toast }) {
   const Icon = ICON[toast.variant];
 
   useEffect(() => {
-    if (toast.duration === null) return;
-    const timer = setTimeout(() => dismiss(toast.id), toast.duration ?? DEFAULT_DURATION);
+    const timer = setTimeout(() => dismiss(toast.id), DEFAULT_DURATION);
     return () => clearTimeout(timer);
-  }, [toast.id, toast.duration, dismiss]);
+  }, [toast.id, dismiss]);
 
   return (
     <motion.div
@@ -52,27 +51,6 @@ function ToastCard({ toast }: { toast: Toast }) {
         <p className="text-sm font-medium text-text-primary">{toast.title}</p>
         {toast.description && (
           <p className="mt-0.5 break-words text-xs text-text-secondary">{toast.description}</p>
-        )}
-        {toast.actions && toast.actions.length > 0 && (
-          <div className="mt-2 flex gap-2">
-            {toast.actions.map((action) => (
-              <button
-                key={action.label}
-                onClick={() => {
-                  action.onClick();
-                  dismiss(toast.id);
-                }}
-                className={cx(
-                  "rounded-md px-2.5 py-1 text-xs font-medium",
-                  action.variant === "danger"
-                    ? "bg-danger text-white hover:bg-danger-hover"
-                    : "bg-accent text-white hover:bg-accent-hover",
-                )}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
         )}
       </div>
       <button

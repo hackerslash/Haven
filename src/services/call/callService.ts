@@ -344,6 +344,13 @@ export async function startCall(self: Identity, roomId: string, remoteId: string
   }
 
   const localStream = await acquireLocalMedia(withVideo);
+  // Re-validate after the mic/camera prompt: an incoming invite, a room call,
+  // or a second startCall may have claimed the call slot while we awaited.
+  // Without this the two paths clobber each other's state and both sides wedge.
+  if (ctx || useCallStore.getState().activeCall || useRoomCallStore.getState().roomId !== null) {
+    localStream.getTracks().forEach((t) => t.stop());
+    return;
+  }
   const inviteId = crypto.randomUUID();
   ctx = {
     self,
@@ -514,9 +521,28 @@ function endCallLocal() {
   useCallStore.getState()._clear();
 }
 
+let screenShareStarting = false;
+
 export async function startScreenShare(config: ScreenShareQualityOption) {
   const call = ctx;
   if (!call?.wrapper) return;
+  // Guard against a double-toggle: without this a second call racing the first
+  // (both awaiting the OS picker) overwrites call.screenStream, leaking the
+  // first capture's tracks and starting system audio twice.
+  if (screenShareStarting || useCallStore.getState().screenOn) return;
+  screenShareStarting = true;
+  try {
+    await startScreenShareInner(call, config);
+  } finally {
+    screenShareStarting = false;
+  }
+}
+
+async function startScreenShareInner(
+  call: CallContext,
+  config: ScreenShareQualityOption,
+) {
+  if (!call.wrapper) return;
   let capture: DisplayCapture;
   try {
     capture = await captureDisplay(config);
@@ -535,6 +561,13 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   }
   const track = stream.getVideoTracks()[0];
   call.screenStream = stream;
+  // Install the ended handler before any awaits: WebView2 can drop the capture
+  // during setup, and if that fires before the handler is attached the share
+  // is stuck "on" with a dead track.
+  track.onended = () => {
+    logScreenShare("video track ended (teardown)", { readyState: track.readyState });
+    void stopScreenShare("ended");
+  };
   await applyScreenTrackConstraints(track, config);
 
   if (ctx !== call) {
@@ -568,13 +601,6 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
     call.wrapper.addTrack(audioTrack, stream);
   }
 
-  // Fires for the OS "Stop sharing" bar AND for captures the system drops on
-  // its own (common on Windows/WebView2). `stopScreenShare("ended")` tells the
-  // teardown this wasn't the in-app Stop button so it can inform the user.
-  track.onended = () => {
-    logScreenShare("video track ended (teardown)", { readyState: track.readyState });
-    void stopScreenShare("ended");
-  };
   const store = useCallStore.getState();
   store._setScreenError(null);
   store._setScreenOn(true);
@@ -640,7 +666,10 @@ export async function toggleCam() {
     await call.wrapper?.replaceVideoTrack(null, "camera");
     current.stop();
     call.localStream?.removeTrack(current);
-    if (ctx === call) store._setMediaFlags(store.micOn, false);
+    if (ctx === call) {
+      const fresh = useCallStore.getState();
+      fresh._setMediaFlags(fresh.micOn, false);
+    }
     return;
   }
 
@@ -663,8 +692,12 @@ export async function toggleCam() {
     }
   }
   if (ctx === call) {
-    store._setMediaFlags(store.micOn, true);
-    if (!store.screenOn) store._setLocalStream(call.localStream);
+    // Read mic/screen state fresh: the user may have toggled mute or a screen
+    // share while the camera permission prompt was open, so the snapshot taken
+    // before the await is stale.
+    const fresh = useCallStore.getState();
+    fresh._setMediaFlags(fresh.micOn, true);
+    if (!fresh.screenOn) fresh._setLocalStream(call.localStream);
   }
 }
 
@@ -728,6 +761,9 @@ export function handleCallRinging(_self: Identity, msg: CallRingingMessage) {
 export function handleCallAccept(self: Identity, msg: CallAcceptMessage) {
   if (!ctx || ctx.remoteId !== msg.fromId) return;
   if (msg.inviteId && msg.inviteId !== ctx.inviteId) return; // stale attempt
+  // Idempotent: a duplicate/replayed accept must not rebuild the connection —
+  // doing so orphans the live RTCPeerConnection and its stats interval.
+  if (ctx.wrapper) return;
   if (ctx.ringTimer) {
     clearTimeout(ctx.ringTimer);
     ctx.ringTimer = null;

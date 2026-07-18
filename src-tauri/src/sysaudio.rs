@@ -118,10 +118,13 @@ mod imp {
         }
 
         fn handle_audio(&self, sbuf: &CMSampleBuffer) {
-            // Reserve room for up to 2 non-interleaved channel buffers.
+            // Reserve room for up to 2 non-interleaved channel buffers. Backed
+            // by u64 words so the buffer is 8-byte aligned for AudioBufferList
+            // (a u8 Vec has alignment 1, which is UB to reinterpret as ABL).
             let base = core::mem::size_of::<AudioBufferList>();
             let extra = core::mem::size_of::<objc2_core_audio_types::AudioBuffer>();
-            let mut storage = vec![0u8; base + extra];
+            let total = base + extra;
+            let mut storage = vec![0u64; total.div_ceil(8)];
             let abl = storage.as_mut_ptr() as *mut AudioBufferList;
 
             let mut block_buffer: *mut CMBlockBuffer = core::ptr::null_mut();
@@ -130,7 +133,7 @@ mod imp {
                 sbuf.audio_buffer_list_with_retained_block_buffer(
                     &mut size_needed,
                     abl,
-                    base + extra,
+                    total,
                     None,
                     None,
                     0,
@@ -226,6 +229,11 @@ mod imp {
     unsafe impl Send for Capture {}
 
     static STATE: Mutex<Option<Capture>> = Mutex::new(None);
+    // Serializes the whole start/stop setup. `start` runs on a blocking thread
+    // and its lengthy setup previously only took STATE at the end, so two
+    // concurrent starts both built a capture and the second overwrote (and
+    // leaked, still running) the first's SCStream.
+    static SETUP: Mutex<()> = Mutex::new(());
 
     fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, String> {
         let (tx, rx) = mpsc::channel::<Result<Retained<SCShareableContent>, String>>();
@@ -266,6 +274,7 @@ mod imp {
     }
 
     pub fn start(channel: Channel<String>) -> Result<(), String> {
+        let _setup = SETUP.lock().unwrap_or_else(|e| e.into_inner());
         stop();
 
         let content = fetch_shareable_content()?;
@@ -382,6 +391,10 @@ mod win {
     }
 
     static STATE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
+    // Serializes start setup so two concurrent starts can't both spawn a capture
+    // thread and have the second orphan the first (which would loop forever into
+    // a dead channel, since its `running` flag is never cleared).
+    static SETUP: Mutex<()> = Mutex::new(());
 
     /// Signals `ActivateCompleted` back to the waiting setup code without a
     /// Win32 event object (pure Rust, so no extra `windows` features needed).
@@ -422,12 +435,11 @@ mod win {
         capture_client: IAudioCaptureClient,
     }
 
+    /// Builds the loopback capture. COM must already be initialized on the
+    /// calling thread; init/uninit are owned by `start`'s thread closure so the
+    /// balance holds on every error path.
     fn setup() -> Result<Objects, String> {
         unsafe {
-            CoInitializeEx(None, COINIT_MULTITHREADED)
-                .ok()
-                .map_err(|e| format!("CoInitializeEx failed: {e}"))?;
-
             // Exclude our own process tree so the call's own audio (played by
             // Haven) is never recaptured — the whole point of the fix.
             let params = AUDIOCLIENT_ACTIVATION_PARAMS {
@@ -573,12 +585,20 @@ mod win {
     }
 
     pub fn start(channel: Channel<String>) -> Result<(), String> {
+        let _setup = SETUP.lock().unwrap_or_else(|e| e.into_inner());
         stop();
         let running = Arc::new(AtomicBool::new(true));
         let running_thread = running.clone();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
         let join = std::thread::spawn(move || {
+            // COM init/uninit are owned here (not in setup) so uninit is only
+            // called after a successful init, and never before the COM
+            // interfaces in `objects` are released.
+            if let Err(e) = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok() } {
+                let _ = ready_tx.send(Err(format!("CoInitializeEx failed: {e}")));
+                return;
+            }
             let objects = match setup() {
                 Ok(o) => o,
                 Err(e) => {
@@ -591,8 +611,9 @@ mod win {
             capture_loop(&objects, &channel, &running_thread);
             unsafe {
                 let _ = objects.audio_client.Stop();
-                CoUninitialize();
             }
+            drop(objects);
+            unsafe { CoUninitialize() };
         });
 
         match ready_rx.recv_timeout(Duration::from_secs(6)) {

@@ -36,7 +36,15 @@ export type MicProcessor = {
 let wasmBinaryPromise: Promise<ArrayBuffer> | null = null;
 function getWasmBinary(): Promise<ArrayBuffer> {
   if (!wasmBinaryPromise) {
-    wasmBinaryPromise = loadRnnoise({ url: rnnoiseWasmUrl, simdUrl: rnnoiseSimdWasmUrl });
+    // Don't cache a rejection: one transient fetch failure would otherwise
+    // disable RNNoise for the rest of the session. Clear it so the next call
+    // retries.
+    wasmBinaryPromise = loadRnnoise({ url: rnnoiseWasmUrl, simdUrl: rnnoiseSimdWasmUrl }).catch(
+      (err) => {
+        wasmBinaryPromise = null;
+        throw err;
+      },
+    );
   }
   return wasmBinaryPromise;
 }

@@ -22,7 +22,3 @@ export function Badge({ children, className }: { children: ReactNode; className?
     </span>
   );
 }
-
-export function Dot({ className }: { className?: string }) {
-  return <span className={cx("h-1.5 w-1.5 rounded-full", className)} aria-hidden="true" />;
-}

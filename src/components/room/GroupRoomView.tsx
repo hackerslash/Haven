@@ -44,27 +44,42 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
   useEffect(() => {
     setActiveRoom(roomId);
     void loadMessages(roomId);
+    return () => {
+      // Clear the active room on leave so its messages aren't marked read while
+      // the user is elsewhere — unless a newer view already claimed it.
+      if (useRoomStore.getState().activeRoomId === roomId) setActiveRoom(null);
+    };
+  }, [roomId, loadMessages, setActiveRoom]);
+
+  // Refresh the member list on room change and whenever activity arrives, so a
+  // join/leave that happened while this view stayed open is reflected. The
+  // guard drops a previous room's late-resolving lookup.
+  useEffect(() => {
     let cancelled = false;
-    // Switching rooms fast enough can let a previous room's lookup resolve
-    // after the current one's — without this guard, memberIds (and thus who
-    // a send addresses) could silently end up set to the wrong room's list.
     void roomMembersRepo.listMembers(roomId).then((ids) => {
       if (!cancelled) setMemberIds(ids);
     });
     return () => {
       cancelled = true;
     };
-  }, [roomId, loadMessages, setActiveRoom]);
+  }, [roomId, messages?.length]);
 
-  function handleSend(file?: File) {
+  async function handleSend(file?: File) {
     if (!room) return;
-    return sendMessage(roomId, memberIds, draft, file).catch((err) => {
+    // Address the current member set: someone may have joined or left while
+    // this view was open, and the cached list would miss (or over-target) them.
+    let currentMembers = memberIds;
+    try {
+      currentMembers = await roomMembersRepo.listMembers(roomId);
+      setMemberIds(currentMembers);
+    } catch {
+      // Fall back to the last-known list.
+    }
+    return sendMessage(roomId, currentMembers, draft, file).catch((err) => {
       console.error("Failed to send message:", err);
       toast.error("Message not sent", "Please try again.");
     });
   }
-
-
 
   if (!room) {
     return <EmptyState icon={Hash} title="Room not found" />;

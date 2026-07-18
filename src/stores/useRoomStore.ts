@@ -16,9 +16,8 @@ type RoomState = {
   loadRooms: () => Promise<void>;
   loadUnread: () => Promise<void>;
   markRead: (roomId: string) => Promise<void>;
-  bumpUnread: (roomId: string) => void;
+  bumpUnread: (roomId: string, by?: number) => void;
   setActiveRoom: (id: string | null) => void;
-  upsertRoomLocal: (room: Room) => void;
   _setRoomCallActivity: (map: Record<string, string[]>) => void;
 };
 
@@ -66,9 +65,9 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     });
   },
 
-  bumpUnread: (roomId) =>
+  bumpUnread: (roomId, by = 1) =>
     set((s) => {
-      const next = { ...s.unreadByRoom, [roomId]: (s.unreadByRoom[roomId] ?? 0) + 1 };
+      const next = { ...s.unreadByRoom, [roomId]: (s.unreadByRoom[roomId] ?? 0) + by };
       refreshAppBadge(next);
       return { unreadByRoom: next };
     }),
@@ -77,9 +76,6 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     set({ activeRoomId: id });
     if (id) void get().markRead(id);
   },
-
-  upsertRoomLocal: (room) =>
-    set((state) => ({ roomsById: { ...state.roomsById, [room.id]: room } })),
 
   _setRoomCallActivity: (map) => set({ callParticipantsByRoom: map }),
 }));

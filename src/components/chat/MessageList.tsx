@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, Check, CheckCheck, Clock, Download, MessageSquare, Paperclip, X } from "lucide-react";
@@ -183,26 +183,128 @@ function MessageAttachment({ message, isOwn }: { message: Message; isOwn: boolea
   );
 }
 
+type MessageRowProps = {
+  message: Message;
+  isOwn: boolean;
+  authorName: string;
+  startsGroup: boolean;
+  newDay: boolean;
+  animateIn: boolean;
+};
+
+/** Memoized so appending one message re-renders only the new row, not the whole
+ * (spring-animated) history — the derived props are all primitives + a stable
+ * message identity, so unchanged rows bail out of reconciliation. */
+const MessageRow = memo(function MessageRow({
+  message,
+  isOwn,
+  authorName,
+  startsGroup,
+  newDay,
+  animateIn,
+}: MessageRowProps) {
+  return (
+    <li>
+      {newDay && (
+        <div className="my-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-[11px] font-semibold text-text-muted">
+            {daySeparatorLabel(message.sentAt)}
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+      )}
+      <motion.div
+        initial={animateIn ? { opacity: 0, y: 8 } : false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 500, damping: 40 }}
+        className={cx(
+          "flex gap-2",
+          startsGroup ? "mt-3" : "mt-0.5",
+          isOwn ? "flex-row-reverse" : "flex-row",
+        )}
+      >
+        {/* Avatar column (others only); spacer keeps continuations aligned */}
+        {!isOwn &&
+          (startsGroup ? (
+            <Avatar id={message.authorId} name={authorName} size="md" />
+          ) : (
+            <span className="w-8 shrink-0" />
+          ))}
+        <div
+          className={cx(
+            "flex min-w-0 max-w-[75%] flex-col",
+            isOwn ? "items-end" : "items-start",
+          )}
+        >
+          {startsGroup && !isOwn && (
+            <div className="mb-0.5 flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-text-primary">{authorName}</span>
+              <span className="text-[11px] text-text-muted">{timeOf(message.sentAt)}</span>
+            </div>
+          )}
+          <div
+            className={cx(
+              "group flex items-end gap-1.5",
+              isOwn ? "flex-row-reverse" : "flex-row",
+            )}
+          >
+            <div
+              className={cx(
+                "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
+                isOwn
+                  ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
+                  : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
+              )}
+            >
+              {message.body && <div>{message.body}</div>}
+              {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
+            </div>
+            <span
+              className={cx(
+                "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
+                "opacity-0 transition-opacity group-hover:opacity-100",
+              )}
+            >
+              {timeOf(message.sentAt)}
+              {isOwn && <DeliveryTick status={message.deliveryStatus} />}
+            </span>
+          </div>
+        </div>
+      </motion.div>
+    </li>
+  );
+});
+
 type MessageListProps = {
   /** undefined = still loading; [] = loaded and empty. */
   messages: Message[] | undefined;
-  /** Optional intro shown above the first message (e.g. DM header). */
-  intro?: React.ReactNode;
 };
 
-export function MessageList({ messages, intro }: MessageListProps) {
+export function MessageList({ messages }: MessageListProps) {
   const self = useIdentityStore((s) => s.self);
   const contactsById = useRosterStore((s) => s.contactsById);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const didInitialRender = useRef(false);
+  // Tracks whether the user was pinned to the bottom BEFORE the latest message
+  // landed — measuring after the append is wrong, since a tall new message can
+  // itself push the scroll distance past the threshold and suppress autoscroll.
+  const wasNearBottom = useRef(true);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const nearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-    if (nearBottom || !didInitialRender.current) {
+    const onScroll = () => {
+      wasNearBottom.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (wasNearBottom.current || !didInitialRender.current) {
       bottomRef.current?.scrollIntoView({ block: "end" });
     }
     didInitialRender.current = true;
@@ -232,7 +334,6 @@ export function MessageList({ messages, intro }: MessageListProps) {
   if (messages.length === 0) {
     return (
       <div className="flex flex-1 flex-col overflow-y-auto">
-        {intro}
         <EmptyState
           icon={MessageSquare}
           title="No messages yet"
@@ -244,7 +345,6 @@ export function MessageList({ messages, intro }: MessageListProps) {
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4" role="log">
-      {intro}
       <ul>
         {messages.map((message, i) => {
           const prev = messages[i - 1];
@@ -258,79 +358,15 @@ export function MessageList({ messages, intro }: MessageListProps) {
             message.sentAt - prev.sentAt > GROUP_GAP_MS;
 
           return (
-            <li key={message.id}>
-              {newDay && (
-                <div className="my-4 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] font-semibold text-text-muted">
-                    {daySeparatorLabel(message.sentAt)}
-                  </span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-              )}
-              <motion.div
-                initial={didInitialRender.current ? { opacity: 0, y: 8 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                className={cx(
-                  "flex gap-2",
-                  startsGroup ? "mt-3" : "mt-0.5",
-                  isOwn ? "flex-row-reverse" : "flex-row",
-                )}
-              >
-                {/* Avatar column (others only); spacer keeps continuations aligned */}
-                {!isOwn &&
-                  (startsGroup ? (
-                    <Avatar id={message.authorId} name={authorName(message.authorId)} size="md" />
-                  ) : (
-                    <span className="w-8 shrink-0" />
-                  ))}
-                <div
-                  className={cx(
-                    "flex min-w-0 max-w-[75%] flex-col",
-                    isOwn ? "items-end" : "items-start",
-                  )}
-                >
-                  {startsGroup && !isOwn && (
-                    <div className="mb-0.5 flex items-baseline gap-2">
-                      <span className="text-sm font-semibold text-text-primary">
-                        {authorName(message.authorId)}
-                      </span>
-                      <span className="text-[11px] text-text-muted">{timeOf(message.sentAt)}</span>
-                    </div>
-                  )}
-                  <div
-                    className={cx(
-                      "group flex items-end gap-1.5",
-                      isOwn ? "flex-row-reverse" : "flex-row",
-                    )}
-                  >
-                    <div
-                      className={cx(
-                        "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
-                        isOwn
-                          ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
-                          : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
-                      )}
-                    >
-                      {message.body && <div>{message.body}</div>}
-                      {message.attachmentName && (
-                        <MessageAttachment message={message} isOwn={isOwn} />
-                      )}
-                    </div>
-                    <span
-                      className={cx(
-                        "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
-                        "opacity-0 transition-opacity group-hover:opacity-100",
-                      )}
-                    >
-                      {timeOf(message.sentAt)}
-                      {isOwn && <DeliveryTick status={message.deliveryStatus} />}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            </li>
+            <MessageRow
+              key={message.id}
+              message={message}
+              isOwn={isOwn}
+              authorName={authorName(message.authorId)}
+              startsGroup={startsGroup}
+              newDay={newDay}
+              animateIn={didInitialRender.current}
+            />
           );
         })}
       </ul>

@@ -16,7 +16,6 @@ type RoomCallState = {
   streamsByParticipant: Record<string, MediaStream>;
   /** Screen-share stream per participant (absent = not sharing). */
   screenStreamsByParticipant: Record<string, MediaStream>;
-  connectionByParticipant: Record<string, RTCPeerConnectionState>;
   qualityByParticipant: Record<string, ConnectionQuality>;
   localStream: MediaStream | null;
   micOn: boolean;
@@ -45,7 +44,6 @@ type RoomCallState = {
   _setSlots: (slots: PresenterSlotWire[]) => void;
   _setParticipantStream: (id: string, stream: MediaStream) => void;
   _setParticipantScreenStream: (id: string, stream: MediaStream | null) => void;
-  _setParticipantConnection: (id: string, state: RTCPeerConnectionState) => void;
   _setParticipantQuality: (id: string, quality: ConnectionQuality) => void;
   _setLocalStream: (stream: MediaStream | null) => void;
   _setMicOn: (on: boolean) => void;
@@ -70,7 +68,6 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
   slots: [],
   streamsByParticipant: {},
   screenStreamsByParticipant: {},
-  connectionByParticipant: {},
   qualityByParticipant: {},
   localStream: null,
   micOn: true,
@@ -112,17 +109,14 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
     set((s) => {
       const streams = { ...s.streamsByParticipant };
       const screens = { ...s.screenStreamsByParticipant };
-      const conns = { ...s.connectionByParticipant };
       const quals = { ...s.qualityByParticipant };
       delete streams[id];
       delete screens[id];
-      delete conns[id];
       delete quals[id];
       return {
         participants: s.participants.filter((p) => p !== id),
         streamsByParticipant: streams,
         screenStreamsByParticipant: screens,
-        connectionByParticipant: conns,
         qualityByParticipant: quals,
       };
     }),
@@ -136,8 +130,6 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       else delete screens[id];
       return { screenStreamsByParticipant: screens };
     }),
-  _setParticipantConnection: (id, state) =>
-    set((s) => ({ connectionByParticipant: { ...s.connectionByParticipant, [id]: state } })),
   _setParticipantQuality: (id, quality) =>
     set((s) => ({ qualityByParticipant: { ...s.qualityByParticipant, [id]: quality } })),
   _setLocalStream: (stream) => set({ localStream: stream }),
@@ -155,7 +147,6 @@ export const useRoomCallStore = create<RoomCallState>((set) => ({
       slots: [],
       streamsByParticipant: {},
       screenStreamsByParticipant: {},
-      connectionByParticipant: {},
       qualityByParticipant: {},
       localStream: null,
       micOn: true,

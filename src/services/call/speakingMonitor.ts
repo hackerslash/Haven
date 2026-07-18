@@ -1,5 +1,11 @@
 export type SpeakingCallback = (speaking: Set<string>) => void;
 
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
 export class SpeakingMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private localAnalyser: AnalyserNode | null = null;
@@ -9,6 +15,7 @@ export class SpeakingMonitor {
   private getRemoteReceivers: () => Map<string, RTCRtpReceiver[]>;
   private callback: SpeakingCallback;
   private speakingUntil: Map<string, number> = new Map();
+  private previousSpeaking: Set<string> = new Set();
   private static THRESHOLD = 0.01;
   private static HOLD_MS = 400;
   private static INTERVAL_MS = 200;
@@ -59,6 +66,7 @@ export class SpeakingMonitor {
     }
     this.localAnalyser = null;
     this.speakingUntil.clear();
+    this.previousSpeaking = new Set();
   }
 
   private tick(): void {
@@ -110,6 +118,11 @@ export class SpeakingMonitor {
       }
     }
 
-    this.callback(speaking);
+    // Only notify on change — the interval fires 5×/s and each callback would
+    // otherwise re-render every speaking-ring subscriber even during silence.
+    if (!setsEqual(speaking, this.previousSpeaking)) {
+      this.previousSpeaking = speaking;
+      this.callback(speaking);
+    }
   }
 }

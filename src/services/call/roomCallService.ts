@@ -14,12 +14,7 @@ import { getPeerRegistry } from "../peer/registry";
 import { derivePeerId } from "../peer/derivePeerId";
 import { PeerConnectionWrapper } from "./PeerConnectionWrapper";
 import { SpeakingMonitor } from "./speakingMonitor";
-import {
-  HEARTBEAT_MS,
-  LEASE_MS,
-  PresenterSlotManager,
-  SLOT_COUNT,
-} from "./PresenterSlotManager";
+import { HEARTBEAT_MS, LEASE_MS, PresenterSlotManager } from "./PresenterSlotManager";
 import {
   captureDisplay,
   describeScreenShareError,
@@ -274,7 +269,6 @@ function ensureWrapper(remoteId: string): PeerConnectionWrapper {
       pushScreenLinkToStore();
     },
     onConnectionStateChange: (state) => {
-      useRoomCallStore.getState()._setParticipantConnection(remoteId, state);
       if (state === "connected") {
         session?.mediaFailedSinceAt.delete(remoteId);
       } else if (state === "disconnected" || state === "failed") {
@@ -354,6 +348,13 @@ export async function joinRoomCall(self: Identity, roomId: string, memberIds: st
     audio: buildMicConstraints(),
     video: false,
   });
+  // Re-validate after the mic prompt: a second join or a 1:1 call may have
+  // claimed the slot while we awaited. Bailing here (and stopping the mic we
+  // just opened) prevents two concurrent sessions and a leaked audio track.
+  if (session || useCallStore.getState().activeCall) {
+    localStream.getTracks().forEach((t) => t.stop());
+    return;
+  }
   markVoiceTracks(localStream);
 
   session = {
@@ -788,7 +789,11 @@ export async function startScreenShare(config: ScreenShareQualityOption) {
   const videoTrack = stream.getVideoTracks()[0];
   const claim = call.slots.buildClaim(freeIndex, call.self.identityId, stream.id, now);
   if (!claim) {
+    // A remote claim took the slot while the picker was open — release the
+    // capture AND the native system-audio it started, and tell the user.
     stream.getTracks().forEach((t) => t.stop());
+    releaseDisplayAudio();
+    useRoomCallStore.getState()._setPresentError("That screen-share slot was just taken.");
     return;
   }
   broadcast({ ...claim, roomId: call.roomId } satisfies SlotClaimMessage);
@@ -980,11 +985,6 @@ export async function handleRtcCandidate(_self: Identity, msg: RtcCandidateMessa
   if (wrapper) await wrapper.handleCandidate(msg.candidate);
 }
 
-export function isRoomCallActive(roomId: string): boolean {
-  return session?.roomId === roomId;
-}
-
-export { SLOT_COUNT, LEASE_MS, HEARTBEAT_MS };
 
 /** Applies a live quality change to every screen sender in the mesh: hints the
  * source frame rate (best-effort) and re-derives the encoder tier from the

@@ -30,7 +30,6 @@ import {
 
 export type DisplayCapture = {
   stream: MediaStream;
-  hasSystemAudio: boolean;
 };
 
 /** Why a screen share is stopping: the in-app Stop button ("user") vs the OS/
@@ -149,7 +148,7 @@ export async function captureDisplay(config?: ScreenShareQualityOption): Promise
     }
   }
 
-  return { stream, hasSystemAudio: stream.getAudioTracks().length > 0 };
+  return { stream };
 }
 
 /** Stops any native system-audio capture started by captureDisplay(). Safe to

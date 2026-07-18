@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useRoomStore } from "../../stores/useRoomStore";
@@ -24,6 +24,15 @@ export function CreateGroupModal({ open, onClose, onCreated }: CreateGroupModalP
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+
+  // Reset on close so a cancelled draft (name + selections, possibly including
+  // contacts since removed) doesn't reappear the next time the modal opens.
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      setSelected(new Set());
+    }
+  }, [open]);
 
   function toggle(id: string) {
     setSelected((prev) => {

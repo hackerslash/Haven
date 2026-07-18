@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, UserPlus, Sparkles } from "lucide-react";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { Button } from "../ui/Button";
@@ -11,9 +11,11 @@ export function HomeView() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [joinInput, setJoinInput] = useState("");
-  const [joinStatus, setJoinStatus] = useState<"idle" | "joining" | "error" | "joined">("idle");
+  const [joinStatus, setJoinStatus] = useState<"idle" | "joining" | "error">("idle");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   async function handleCreateInvite() {
     setCreating(true);
@@ -32,7 +34,8 @@ export function HomeView() {
     if (!inviteLink) return;
     await navigator.clipboard.writeText(inviteLink);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1_500);
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
   }
 
   async function handleJoin(e: React.FormEvent) {
@@ -42,7 +45,7 @@ export function HomeView() {
     setJoinError(null);
     try {
       await acceptInvite(joinInput.trim());
-      setJoinStatus("joined");
+      setJoinStatus("idle");
       setJoinInput("");
       toast.success("Connected", "You're now trusted with that member.");
     } catch (err) {

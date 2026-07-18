@@ -5,7 +5,6 @@ import type {
   SlotReleaseMessage,
 } from "../../types/wire";
 
-export const SLOT_COUNT = 2;
 export const LEASE_MS = 9_000;
 export const HEARTBEAT_MS = 3_000;
 

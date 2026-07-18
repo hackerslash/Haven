@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Hash, Home, Inbox, Plus, Settings, Volume2, X } from "lucide-react";
 import { useRosterStore } from "../../stores/useRosterStore";
 import { useRoomStore } from "../../stores/useRoomStore";
@@ -38,6 +38,8 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
   const pendingRequests = useFriendRequestStore((s) => s.pending.length);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const contacts = Object.values(contactsById).filter((c) => !c.revoked);
   const groupRooms = Object.values(roomsById).filter((r) => r.type === "group");
@@ -46,7 +48,8 @@ export function Sidebar({ selection, onSelect, onCreateGroup, onOpenSettings }: 
     if (!self) return;
     void navigator.clipboard.writeText(self.identityId).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1_500);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
     });
   }
 

@@ -81,10 +81,12 @@ export function initNetworkBridge(self: Identity): () => void {
       void syncDmWith(self, contact.identityId, peerId).catch((err) =>
         console.error("failed to sync DM with", peerId, err),
       );
+      // Only ever share the roster with a peer we already trust — otherwise any
+      // stranger who dials receives every contact's id, key, and display name.
+      void rosterService
+        .sendRosterSync(self, peerId)
+        .catch((err) => console.error("failed to send roster sync to", peerId, err));
     }
-    void rosterService
-      .sendRosterSync(self, peerId)
-      .catch((err) => console.error("failed to send roster sync to", peerId, err));
   });
 
   registry.on("peer-disconnected", (peerId) => {
@@ -147,16 +149,35 @@ export function initNetworkBridge(self: Identity): () => void {
 
   /** Bumps the room's unread count unless it's the room the user is currently
    * viewing in a focused window (in which case it's read on arrival). */
-  function markUnreadIfInactive(roomId: string) {
+  function markUnreadIfInactive(roomId: string, count = 1) {
     const roomStore = useRoomStore.getState();
     const isActive = roomStore.activeRoomId === roomId && document.hasFocus();
     if (isActive) void roomStore.markRead(roomId);
-    else roomStore.bumpUnread(roomId);
+    else roomStore.bumpUnread(roomId, count);
   }
+
+  // The invite handshake is how trust is first established, so it's the only
+  // traffic accepted from a peer that isn't yet a contact. Everything else —
+  // chat, roster sync, room sync, acks, call/room-call signaling — must come
+  // from a peer that maps to a trusted, non-revoked contact. Without this gate
+  // a stranger who dials could inject messages, pull room history, forge roster
+  // and leave events, flip delivery state, or spam call invites.
+  const TRUST_ESTABLISHING = new Set<HavenMessage["type"]>([
+    "invite_consume",
+    "invite_ack",
+    "friend_request",
+    "friend_request_response",
+  ]);
 
   async function routeMessage(peerId: string, data: unknown) {
     const msg = data as HavenMessage;
-    switch (msg?.type) {
+    if (!msg?.type) return;
+    const sender = findContactByPeerId(peerId);
+    if (!TRUST_ESTABLISHING.has(msg.type) && (!sender || sender.revoked)) {
+      console.warn("dropping", msg.type, "from untrusted peer", peerId);
+      return;
+    }
+    switch (msg.type) {
       case "invite_consume":
       case "invite_ack":
       case "roster_sync": {
@@ -200,20 +221,29 @@ export function initNetworkBridge(self: Identity): () => void {
       case "room_sync_request": {
         // The requester's have-vector doubles as a receipt: anything of ours
         // at or below their seq is already on their device.
-        const flipped = await chatService.handleRoomSyncRequest(self.identityId, peerId, msg);
+        if (!sender) break;
+        const flipped = await chatService.handleRoomSyncRequest(
+          self.identityId,
+          peerId,
+          sender.identityId,
+          msg,
+        );
         if (flipped) await useChatStore.getState().refreshRoom(msg.roomId);
         break;
       }
       case "room_sync_response": {
         const stored = await chatService.handleRoomSyncResponse(self, msg, Date.now());
+        // Single merge + one room-list refresh for the whole backfill.
+        useChatStore.getState().ingestMessages(stored);
+        const backfillByRoom = new Map<string, number>();
         for (const m of stored) {
           // Ack the author directly (best effort) — the relaying peer isn't
           // necessarily who wrote the message.
           ackMessage(derivePeerId(m.authorId), m.roomId, m.id);
-          useChatStore.getState().ingestMessage(m);
-          // Backfilled messages count as unread but don't fire a notification.
-          markUnreadIfInactive(m.roomId);
+          backfillByRoom.set(m.roomId, (backfillByRoom.get(m.roomId) ?? 0) + 1);
         }
+        // Backfilled messages count as unread but don't fire a notification.
+        for (const [roomId, count] of backfillByRoom) markUnreadIfInactive(roomId, count);
         break;
       }
       case "call_invite":
@@ -244,8 +274,12 @@ export function initNetworkBridge(self: Identity): () => void {
         await useRoomStore.getState().loadRooms();
         break;
       case "room_leave":
-        await roomService.handleRoomLeave(self, msg);
-        await useRoomStore.getState().loadRooms();
+        // A member can only tombstone itself: the leave must come from the peer
+        // it names, else any contact could evict anyone from a shared room.
+        if (derivePeerId(msg.fromId) === peerId) {
+          await roomService.handleRoomLeave(self, msg);
+          await useRoomStore.getState().loadRooms();
+        }
         break;
       case "room_call_beacon":
         getRoomCallPresenceTracker().applyBeacon(msg);
