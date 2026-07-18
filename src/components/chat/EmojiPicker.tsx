@@ -110,6 +110,73 @@ const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
 ];
 
+const EMOJI_KEYWORDS: Record<string, string> = {
+  "😀": "grinning smile happy face",
+  "😃": "smile happy joy face",
+  "😄": "smile happy laugh face",
+  "😁": "grin happy smile",
+  "😆": "laugh haha lol xd",
+  "😅": "sweat smile phew",
+  "😂": "joy tears laugh lol rofl",
+  "🤣": "rofl laugh tears lol",
+  "😊": "blush happy smile",
+  "😇": "halo angel innocent",
+  "🙂": "slight smile happy",
+  "🙃": "upside down silly",
+  "😉": "wink playful",
+  "😍": "love heart eyes",
+  "🥰": "hearts love cute",
+  "😘": "kiss love",
+  "😋": "yum delicious food",
+  "😜": "tongue wink playful",
+  "🤪": "crazy zany goofy",
+  "😎": "cool sunglasses glasses",
+  "🥳": "party celebrate hat",
+  "😏": "smirk coy",
+  "😒": "unamused meh",
+  "😔": "pensive sad",
+  "😟": "worried concerned",
+  "😢": "cry tear sad",
+  "😭": "sob cry tears sad",
+  "😱": "scream fear shocked",
+  "😳": "flustered blush shocked",
+  "😡": "rage angry mad red",
+  "🤬": "cursing swearing angry",
+  "🤯": "mind blown exploding head",
+  "💀": "skull dead dead",
+  "💩": "poop poopie",
+  "🤡": "clown silly",
+  "👻": "ghost boo spooky",
+  "👽": "alien space ufo",
+  "🤖": "robot bot",
+  "👋": "wave hello hi goodbye",
+  "✋": "hand stop hi5",
+  "👌": "ok okay perfect",
+  "✌️": "peace victory",
+  "🤞": "fingers crossed luck",
+  "🤟": "love-you rock",
+  "🤘": "rock-on metal",
+  "👍": "thumbsup like yes agree +1",
+  "👎": "thumbsdown dislike no -1",
+  "👏": "clap applause bravo",
+  "🙌": "raised hands praise celebration",
+  "🙏": "pray please thank-you thanks",
+  "💪": "flex muscle strong flex",
+  "❤️": "heart love red-heart",
+  "🔥": "fire flame hot lit",
+  "✨": "sparkles shiny magic",
+  "⭐": "star yellow-star",
+  "🎉": "tada party celebration",
+  "🚀": "rocket launch ship",
+  "🐶": "dog puppy animal",
+  "🐱": "cat kitten meow",
+  "🍕": "pizza food cheese",
+  "🍔": "burger hamburger food",
+  "☕️": "coffee tea drink mug",
+  "🍺": "beer drink alcohol cheers",
+  "🍷": "wine drink glass",
+};
+
 type EmojiPickerProps = {
   onSelectEmoji: (emoji: string) => void;
   onClose: () => void;
@@ -137,8 +204,12 @@ export function EmojiPicker({ onSelectEmoji, onClose }: EmojiPickerProps) {
     };
   }, [onClose]);
 
-  const filteredEmojis = searchQuery.trim()
-    ? EMOJI_CATEGORIES.flatMap((cat) => cat.emojis).filter((_) => true) // All emojis during search
+  const q = searchQuery.toLowerCase().trim();
+  const filteredEmojis = q
+    ? EMOJI_CATEGORIES.flatMap((cat) => cat.emojis).filter((emoji) => {
+        const keywords = EMOJI_KEYWORDS[emoji] ?? "";
+        return emoji.includes(q) || keywords.toLowerCase().includes(q);
+      })
     : EMOJI_CATEGORIES.find((cat) => cat.id === activeCategory)?.emojis ?? [];
 
   return (
@@ -158,7 +229,7 @@ export function EmojiPicker({ onSelectEmoji, onClose }: EmojiPickerProps) {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search emojis…"
-          className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
+          className="w-full border-0 bg-transparent text-xs text-text-primary outline-none focus:outline-none focus:ring-0 focus:border-0 shadow-none placeholder:text-text-muted select-text"
           autoFocus
         />
         {searchQuery && (

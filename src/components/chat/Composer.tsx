@@ -131,7 +131,7 @@ export function Composer({ value, placeholder, onChange, onSend }: ComposerProps
       </AnimatePresence>
 
       {/* Discord Style Full Width Input Container */}
-      <div className="relative flex w-full flex-col rounded-xl border border-border/60 bg-bg-tertiary/80 shadow-md backdrop-blur-md transition-all focus-within:border-accent/60 focus-within:bg-bg-tertiary focus-within:shadow-lg">
+      <div className="relative flex w-full flex-col rounded-xl border border-border/50 bg-bg-tertiary/90 transition-colors focus-within:border-accent/40 shadow-sm">
         {/* Input Row */}
         <div className="flex w-full items-end gap-1.5 px-3 py-1.5">
           <input
@@ -173,7 +173,7 @@ export function Composer({ value, placeholder, onChange, onSend }: ComposerProps
             rows={1}
             placeholder={placeholder}
             aria-label="Message"
-            className="max-h-44 min-h-[38px] flex-1 resize-none border-none bg-transparent px-2 py-2 text-sm text-text-primary outline-none placeholder:text-text-muted leading-relaxed"
+            className="max-h-44 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm text-text-primary outline-none focus:outline-none focus:ring-0 focus:border-0 shadow-none placeholder:text-text-muted leading-relaxed select-text"
           />
 
           {/* Actions: Emoji Picker & Send */}
