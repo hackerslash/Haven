@@ -22,9 +22,13 @@ use tauri::ipc::Channel;
 // Tauri commands run inline on the IPC dispatch thread, so without
 // spawn_blocking a slow setup would freeze the whole window for that long.
 #[tauri::command]
-pub async fn sysaudio_start(channel: Channel<String>) -> Result<(), String> {
+pub async fn sysaudio_start(
+    webview_window: tauri::WebviewWindow,
+    channel: Channel<String>,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        let _ = &webview_window;
         tauri::async_runtime::spawn_blocking(move || {
             // Prefer CoreAudio process taps (macOS 14.4+): unlike the
             // ScreenCaptureKit app filter, taps can exclude the WKWebView GPU
@@ -45,14 +49,20 @@ pub async fn sysaudio_start(channel: Channel<String>) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        tauri::async_runtime::spawn_blocking(move || win::start(channel))
+        // Exclude the WebView2 BROWSER process tree, not our own: the browser
+        // process is COM-activated (not necessarily a child of haven.exe), and
+        // it is the root of the helper tree that actually plays the call
+        // audio — excluding haven.exe's tree missed it, echoing participants
+        // back at themselves.
+        let exclude_pid = win::browser_pid(&webview_window).unwrap_or_else(|| std::process::id());
+        tauri::async_runtime::spawn_blocking(move || win::start(channel, exclude_pid))
             .await
             .map_err(|e| e.to_string())
             .and_then(|inner| inner)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = channel;
+        let _ = (webview_window, channel);
         Err("system audio capture is not implemented on this platform".into())
     }
 }
@@ -975,7 +985,36 @@ mod win {
         WAVEFORMATEX,
     };
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
-    use windows::Win32::System::Threading::GetCurrentProcessId;
+
+    /// The WebView2 browser process id — the root of the helper tree that
+    /// renders (and plays) all of the webview's audio, including the call.
+    /// Resolved from the live webview because the browser process is
+    /// COM-activated and not reliably a child of haven.exe.
+    pub fn browser_pid(window: &tauri::WebviewWindow) -> Option<u32> {
+        let (tx, rx) = mpsc::channel::<Option<u32>>();
+        window
+            .with_webview(move |webview| {
+                let pid = unsafe {
+                    let controller = webview.controller();
+                    match controller.CoreWebView2() {
+                        Ok(core) => {
+                            let mut pid = 0u32;
+                            core.BrowserProcessId(&mut pid).ok().map(|_| pid)
+                        }
+                        Err(_) => None,
+                    }
+                };
+                let _ = tx.send(pid);
+            })
+            .ok()?;
+        let pid = rx
+            .recv_timeout(Duration::from_secs(2))
+            .ok()
+            .flatten()
+            .filter(|p| *p != 0);
+        eprintln!("[sysaudio] win: WebView2 browser pid = {pid:?} (self = {})", std::process::id());
+        pid
+    }
 
     const SAMPLE_RATE: u32 = 48_000;
     const CHANNELS: u16 = 2;
@@ -1037,15 +1076,16 @@ mod win {
     /// Builds the loopback capture. COM must already be initialized on the
     /// calling thread; init/uninit are owned by `start`'s thread closure so the
     /// balance holds on every error path.
-    fn setup() -> Result<Objects, String> {
+    fn setup(exclude_pid: u32) -> Result<Objects, String> {
         unsafe {
-            // Exclude our own process tree so the call's own audio (played by
-            // Haven) is never recaptured — the whole point of the fix.
+            // Exclude the process tree that plays the call's own audio (the
+            // WebView2 browser tree; our own pid as fallback) so it is never
+            // recaptured — the whole point of the fix.
             let params = AUDIOCLIENT_ACTIVATION_PARAMS {
                 ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
                 Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
                     ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
-                        TargetProcessId: GetCurrentProcessId(),
+                        TargetProcessId: exclude_pid,
                         ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE,
                     },
                 },
@@ -1183,9 +1223,10 @@ mod win {
         }
     }
 
-    pub fn start(channel: Channel<String>) -> Result<(), String> {
+    pub fn start(channel: Channel<String>, exclude_pid: u32) -> Result<(), String> {
         let _setup = SETUP.lock().unwrap_or_else(|e| e.into_inner());
         stop();
+        eprintln!("[sysaudio] win: capturing system audio, excluding process tree of pid={exclude_pid}");
         let running = Arc::new(AtomicBool::new(true));
         let running_thread = running.clone();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -1198,7 +1239,7 @@ mod win {
                 let _ = ready_tx.send(Err(format!("CoInitializeEx failed: {e}")));
                 return;
             }
-            let objects = match setup() {
+            let objects = match setup(exclude_pid) {
                 Ok(o) => o,
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));

@@ -592,6 +592,17 @@ export async function switchMicDevice(): Promise<void> {
     oldOutgoing: trackDebugInfo(previousOutgoing),
     micOn: useRoomCallStore.getState().micOn,
   });
+  // Same-device re-acquire (the echo-cancellation toggle): WebKit shares one
+  // capture unit per device, so the old track must be released BEFORE asking
+  // for one with different processing — acquiring first hands back a track
+  // tied to the old unit, and stopping the old track then kills both (dead
+  // mic until rejoin).
+  const oldRaw = call.localStream.getAudioTracks()[0];
+  const targetDevice = useSettingsStore.getState().audioInputDeviceId;
+  if (oldRaw && (!targetDevice || oldRaw.getSettings().deviceId === targetDevice)) {
+    call.localStream.removeTrack(oldRaw);
+    oldRaw.stop();
+  }
   let newStream: MediaStream;
   try {
     newStream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints() });
