@@ -325,24 +325,7 @@ export type RoomCallBeaconMessage = {
   leaving: boolean;
 };
 
-export type FriendRequestMessage = {
-  type: "friend_request";
-  fromId: string;
-  fromPubKey: string;
-  fromDisplayName: string;
-  ts: number;
-  sig: string;
-};
 
-export type FriendRequestResponseMessage = {
-  type: "friend_request_response";
-  fromId: string;
-  fromPubKey: string;
-  fromDisplayName: string;
-  accepted: boolean;
-  roster: RosterEntryWire[];
-  sig: string;
-};
 
 export type FileChunkMessage = {
   type: "file_chunk";
@@ -377,8 +360,6 @@ export type HavenMessage =
   | AvatarRequestMessage
   | AvatarDataMessage
   | FileChunkMessage
-  | FriendRequestMessage
-  | FriendRequestResponseMessage
   | InviteConsumeMessage
   | InviteAckMessage
   | RosterSyncMessage
