@@ -27,10 +27,23 @@ export type MicProcessor = {
   /** Enable/disable RNNoise live WITHOUT changing the output track identity, so
    * toggling the setting mid-call needs no renegotiation. */
   setEnabled(on: boolean): void;
-  /** Tear down the graph and close the AudioContext. Does NOT stop the raw
-   * source track — the caller owns that. */
+  /** Tear down this processor's graph (the shared AudioContext stays open).
+   * Does NOT stop the raw source track — the caller owns that. */
   dispose(): Promise<void>;
 };
+
+// One AudioContext shared by every capture-side graph (RNNoise, speaking
+// analysis). Opening/closing contexts mid-call re-initializes the platform
+// audio unit, which on macOS audibly changes how remote playback sounds —
+// so this context is created once and never closed for the app's lifetime.
+let sharedCtx: AudioContext | null = null;
+let rnnoiseWorkletLoaded: Promise<void> | null = null;
+
+export function getSharedAudioContext(): AudioContext {
+  // RNNoise assumes 48 kHz — pin the context so the worklet gets it directly.
+  if (!sharedCtx) sharedCtx = new AudioContext({ sampleRate: 48_000 });
+  return sharedCtx;
+}
 
 // The wasm binary is fetched once and reused across calls.
 let wasmBinaryPromise: Promise<ArrayBuffer> | null = null;
@@ -53,13 +66,18 @@ export async function createMicProcessor(
   rawTrack: MediaStreamTrack,
   enabled: boolean,
 ): Promise<MicProcessor | null> {
-  let ctx: AudioContext | null = null;
   try {
     const wasmBinary = await getWasmBinary();
-    // RNNoise assumes 48 kHz — pin the context so the worklet gets it directly.
-    ctx = new AudioContext({ sampleRate: 48_000 });
+    const ctx = getSharedAudioContext();
     if (ctx.state !== "running") await ctx.resume().catch(() => {});
-    await ctx.audioWorklet.addModule(rnnoiseWorkletUrl);
+    if (!rnnoiseWorkletLoaded) {
+      // Don't cache a rejection — retry on the next call.
+      rnnoiseWorkletLoaded = ctx.audioWorklet.addModule(rnnoiseWorkletUrl).catch((err) => {
+        rnnoiseWorkletLoaded = null;
+        throw err;
+      });
+    }
+    await rnnoiseWorkletLoaded;
 
     const source = ctx.createMediaStreamSource(new MediaStream([rawTrack]));
     const node = new RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary });
@@ -84,7 +102,8 @@ export async function createMicProcessor(
 
     const track = dest.stream.getAudioTracks()[0];
     if (!track) {
-      await ctx.close().catch(() => {});
+      source.disconnect();
+      node.disconnect();
       return null;
     }
     // Opus optimizes for voice when the track is hinted as speech.
@@ -94,7 +113,6 @@ export async function createMicProcessor(
       // contentHint is advisory
     }
 
-    const activeCtx = ctx;
     return {
       track,
       setEnabled(on: boolean) {
@@ -102,6 +120,8 @@ export async function createMicProcessor(
         if (on) routeThroughRnnoise();
         else routeBypass();
       },
+      // Tears down this processor's nodes only — the shared AudioContext
+      // stays open (closing it mid-call re-inits the platform audio unit).
       async dispose() {
         try {
           node.destroy();
@@ -115,12 +135,10 @@ export async function createMicProcessor(
         } catch {
           // best effort
         }
-        await activeCtx.close().catch(() => {});
       },
     };
   } catch (err) {
     console.warn("[noiseSuppressor] RNNoise unavailable, using raw mic:", err);
-    if (ctx) await ctx.close().catch(() => {});
     return null;
   }
 }

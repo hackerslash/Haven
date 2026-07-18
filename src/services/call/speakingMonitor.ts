@@ -1,3 +1,5 @@
+import { getSharedAudioContext } from "./noiseSuppressor";
+
 export type SpeakingCallback = (speaking: Set<string>) => void;
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -9,7 +11,6 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 export class SpeakingMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private localAnalyser: AnalyserNode | null = null;
-  private localCtx: AudioContext | null = null;
   private localSource: MediaStreamAudioSourceNode | null = null;
   private localId: string;
   private getRemoteReceivers: () => Map<string, RTCRtpReceiver[]>;
@@ -32,14 +33,16 @@ export class SpeakingMonitor {
 
     if (localStream && localStream.getAudioTracks().length > 0) {
       try {
-        this.localCtx = new AudioContext();
-        this.localSource = this.localCtx.createMediaStreamSource(localStream);
-        this.localAnalyser = this.localCtx.createAnalyser();
+        // Uses the app-wide shared AudioContext — monitors restart on mic
+        // switch, and opening/closing a context each time re-inits the
+        // platform audio unit, audibly changing remote playback on macOS.
+        const ctx = getSharedAudioContext();
+        this.localSource = ctx.createMediaStreamSource(localStream);
+        this.localAnalyser = ctx.createAnalyser();
         this.localAnalyser.fftSize = 256;
         this.localSource.connect(this.localAnalyser);
       } catch {
         // AudioContext may fail in some environments; local detection disabled.
-        this.localCtx = null;
         this.localSource = null;
         this.localAnalyser = null;
       }
@@ -59,10 +62,6 @@ export class SpeakingMonitor {
     if (this.localSource) {
       this.localSource.disconnect();
       this.localSource = null;
-    }
-    if (this.localCtx) {
-      void this.localCtx.close();
-      this.localCtx = null;
     }
     this.localAnalyser = null;
     this.speakingUntil.clear();

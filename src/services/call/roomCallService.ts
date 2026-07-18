@@ -29,6 +29,7 @@ import { createMicProcessor, type MicProcessor } from "./noiseSuppressor";
 import { resolveScreenTierSpec, type ScreenShareQualityOption } from "./screenShareConfig";
 import type { TierSpec } from "./PeerConnectionWrapper";
 import { emitCallEvent } from "./callEvents";
+import { logCallDebug, trackDebugInfo } from "./callDebug";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
 import { useCallStore } from "../../stores/useCallStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
@@ -586,6 +587,11 @@ export async function switchMicDevice(): Promise<void> {
   // Captured before the processor swap: identifies the exact sender carrying
   // the mic, so the replace can never land on a screen-share audio sender.
   const previousOutgoing = outgoingAudioTrack();
+  logCallDebug("room-mic-switch:begin", {
+    oldRaw: trackDebugInfo(call.localStream.getAudioTracks()[0]),
+    oldOutgoing: trackDebugInfo(previousOutgoing),
+    micOn: useRoomCallStore.getState().micOn,
+  });
   let newStream: MediaStream;
   try {
     newStream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints() });
@@ -658,6 +664,11 @@ export async function switchMicDevice(): Promise<void> {
   void oldProcessor?.dispose();
 
   call.localStream.addTrack(newTrack);
+  logCallDebug("room-mic-switch:done", {
+    newRaw: trackDebugInfo(newTrack),
+    outgoing: trackDebugInfo(outgoing),
+    rnnoise: newProcessor !== null,
+  });
 
   // Restart the speaking monitor on the new stream.
   if (call.speakingMonitor) {

@@ -304,10 +304,30 @@ mod imp {
             .iter()
             .filter(|app| {
                 let pid = unsafe { app.processID() };
-                pid == our_pid
-                    || unsafe { responsibility_get_pid_responsible_for_pid(pid) } == our_pid
+                let resp = unsafe { responsibility_get_pid_responsible_for_pid(pid) };
+                let bundle = unsafe { app.bundleIdentifier() }.to_string();
+                let own = pid == our_pid || resp == our_pid;
+                // Diagnostic: log every app that's ours or WebKit-related, so a
+                // failing exclusion (echo) shows exactly what SCK enumerated.
+                if own || bundle.to_lowercase().contains("webkit") {
+                    eprintln!(
+                        "[sysaudio] app pid={pid} responsible={resp} bundle={bundle} excluded={own}"
+                    );
+                }
+                own
             })
             .collect();
+        eprintln!(
+            "[sysaudio] our pid={our_pid}; excluding {} of {} enumerated apps",
+            own_apps.len(),
+            apps.len()
+        );
+        if own_apps.is_empty() {
+            eprintln!(
+                "[sysaudio] WARNING: no own apps found to exclude — the call's own \
+                 playback will be recaptured and participants will hear an echo"
+            );
+        }
 
         let filter = if own_apps.is_empty() {
             let empty = NSArray::new();

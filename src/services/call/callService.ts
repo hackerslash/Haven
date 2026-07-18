@@ -25,6 +25,7 @@ import { applyMicProcessing, buildMicConstraints, markVoiceTracks } from "./micA
 import { createMicProcessor, type MicProcessor } from "./noiseSuppressor";
 import { resolveScreenTierSpec, type ScreenShareQualityOption } from "./screenShareConfig";
 import { emitCallEvent } from "./callEvents";
+import { logCallDebug, trackDebugInfo } from "./callDebug";
 import { useCallStore } from "../../stores/useCallStore";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
@@ -175,6 +176,11 @@ export async function switchMicDevice(): Promise<void> {
   // Captured before the processor swap: identifies the exact sender carrying
   // the mic, so the replace can never land on a screen-share audio sender.
   const previousOutgoing = outgoingAudioTrack();
+  logCallDebug("mic-switch:begin", {
+    oldRaw: trackDebugInfo(call.localStream?.getAudioTracks()[0]),
+    oldOutgoing: trackDebugInfo(previousOutgoing),
+    micOn: useCallStore.getState().micOn,
+  });
   let newStream: MediaStream;
   try {
     newStream = await navigator.mediaDevices.getUserMedia({ audio: buildMicConstraints() });
@@ -253,6 +259,11 @@ export async function switchMicDevice(): Promise<void> {
     call.speakingMonitor = null;
   }
   startSpeakingMonitor();
+  logCallDebug("mic-switch:done", {
+    newRaw: trackDebugInfo(newTrack),
+    outgoing: trackDebugInfo(outgoing),
+    rnnoise: newProcessor !== null,
+  });
 }
 
 /** Re-opens the camera with the device currently selected in settings and

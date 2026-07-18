@@ -1,4 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getSharedAudioContext } from "./noiseSuppressor";
+import { logCallDebug } from "./callDebug";
 
 /**
  * Bridge for native system-audio capture on macOS and Windows.
@@ -16,10 +18,13 @@ import { Channel, invoke } from "@tauri-apps/api/core";
  * video-only.
  */
 
-let audioCtx: AudioContext | null = null;
 let workletNode: AudioWorkletNode | null = null;
 let destination: MediaStreamAudioDestinationNode | null = null;
 let channel: Channel<string> | null = null;
+// The worklet module loads once into the shared AudioContext (opening and
+// closing a context per share re-inits the platform audio unit, which
+// audibly changes remote playback on macOS).
+let sysWorkletLoaded: Promise<void> | null = null;
 
 // Serializes start/stop so a stop that races a subsequent start can neither
 // tear down the new capture's audio graph nor let its native `sysaudio_stop`
@@ -78,8 +83,14 @@ export function startSystemAudioTrack(): Promise<MediaStreamTrack | null> {
 
 async function startSystemAudioTrackInner(): Promise<MediaStreamTrack | null> {
   try {
-    const ctx = new AudioContext({ sampleRate: 48_000 });
-    await ctx.audioWorklet.addModule("/sysaudio-worklet.js");
+    const ctx = getSharedAudioContext();
+    if (!sysWorkletLoaded) {
+      sysWorkletLoaded = ctx.audioWorklet.addModule("/sysaudio-worklet.js").catch((err) => {
+        sysWorkletLoaded = null;
+        throw err;
+      });
+    }
+    await sysWorkletLoaded;
     const node = new AudioWorkletNode(ctx, "haven-sysaudio", { outputChannelCount: [2] });
     const dest = ctx.createMediaStreamDestination();
     node.connect(dest);
@@ -98,13 +109,14 @@ async function startSystemAudioTrackInner(): Promise<MediaStreamTrack | null> {
 
     await invoke("sysaudio_start", { channel: ch });
 
-    audioCtx = ctx;
     workletNode = node;
     destination = dest;
     channel = ch;
+    logCallDebug("sysaudio:started", { ctxState: ctx.state, sampleRate: ctx.sampleRate });
     return dest.stream.getAudioTracks()[0] ?? null;
   } catch (err) {
     console.warn("[systemAudio] native capture unavailable:", err);
+    logCallDebug("sysaudio:start-failed", { error: String(err) });
     await stopSystemAudioTrackInner();
     return null;
   }
@@ -117,11 +129,9 @@ export function stopSystemAudioTrack(): Promise<void> {
 async function stopSystemAudioTrackInner(): Promise<void> {
   // Detach the module singletons up front so a start racing this stop installs
   // fresh state that we won't then tear down out from under it.
-  const ctx = audioCtx;
   const node = workletNode;
   const dest = destination;
   const ch = channel;
-  audioCtx = null;
   workletNode = null;
   destination = null;
   channel = null;
@@ -135,5 +145,4 @@ async function stopSystemAudioTrackInner(): Promise<void> {
   node?.port.postMessage("flush");
   node?.disconnect();
   dest?.disconnect();
-  if (ctx) await ctx.close().catch(() => {});
 }
