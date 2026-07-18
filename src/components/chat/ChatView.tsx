@@ -8,6 +8,8 @@ import { useCallStore } from "../../stores/useCallStore";
 import { dmRoomId } from "../../services/room/chatService";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
+import { TypingIndicator } from "./TypingIndicator";
+import { notifyTyping, stopTyping } from "../../services/room/typingService";
 import { Avatar } from "../ui/Avatar";
 import { IconButton } from "../ui/IconButton";
 import { EmptyState } from "../ui/EmptyState";
@@ -59,6 +61,7 @@ export function ChatView({ contactId }: ChatViewProps) {
       if (myRoomId && useRoomStore.getState().activeRoomId === myRoomId) {
         setActiveRoom(null);
       }
+      if (myRoomId) stopTyping(myRoomId, [contactId]);
     };
   }, [self, contactId, loadMessages, setActiveRoom]);
 
@@ -76,6 +79,7 @@ export function ChatView({ contactId }: ChatViewProps) {
 
   function handleSend(file?: File) {
     if (!roomId) return;
+    stopTyping(roomId, [contactId]);
     return sendMessage(roomId, [contactId], draft, file).catch((err) => {
       console.error("Failed to send message:", err);
       toast.error("Message not sent", "Please try again.");
@@ -118,10 +122,16 @@ export function ChatView({ contactId }: ChatViewProps) {
         </div>
       </header>
       <MessageList messages={messages} />
+      <TypingIndicator roomId={roomId} />
       <Composer
         value={draft}
         placeholder={`Message ${contact.displayName}`}
-        onChange={(v) => roomId && setDraft(roomId, v)}
+        onChange={(v) => {
+          if (!roomId) return;
+          setDraft(roomId, v);
+          if (v) notifyTyping(roomId, [contactId]);
+          else stopTyping(roomId, [contactId]);
+        }}
         onSend={handleSend}
       />
     </div>

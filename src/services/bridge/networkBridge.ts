@@ -18,6 +18,7 @@ import { useRosterStore } from "../../stores/useRosterStore";
 import { useIdentityStore } from "../../stores/useIdentityStore";
 import { useRoomStore } from "../../stores/useRoomStore";
 import { useChatStore } from "../../stores/useChatStore";
+import { useTypingStore } from "../../stores/useTypingStore";
 import { notifyIfUnfocused } from "../notify";
 
 const DISCOVERY_INTERVAL_MS = 2_000;
@@ -251,6 +252,10 @@ export function initNetworkBridge(self: Identity): () => void {
       case "msg_ack":
         await messageRepo.setDeliveryStatus(msg.messageId, "delivered");
         useChatStore.getState().updateMessageStatus(msg.roomId, msg.messageId, "delivered");
+        break;
+      case "typing":
+        // Attribute to the authenticated peer, not the spoofable wire fromId.
+        if (sender) useTypingStore.getState().setTyping(msg.roomId, sender.identityId, msg.typing);
         break;
       case "room_sync_request": {
         // The requester's have-vector doubles as a receipt: anything of ours

@@ -8,6 +8,8 @@ import * as roomMembersRepo from "../../services/db/roomMembersRepo";
 import * as roomService from "../../services/room/roomService";
 import { MessageList } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
+import { TypingIndicator } from "../chat/TypingIndicator";
+import { notifyTyping, stopTyping } from "../../services/room/typingService";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -54,6 +56,7 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
     void loadMessages(roomId);
     return () => {
       if (useRoomStore.getState().activeRoomId === roomId) setActiveRoom(null);
+      stopTyping(roomId, memberIds);
     };
   }, [roomId, loadMessages, setActiveRoom]);
 
@@ -80,6 +83,7 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
     } catch {
       // Fall back to last known
     }
+    stopTyping(roomId, currentMembers);
     return sendMessage(roomId, currentMembers, draft, file).catch((err) => {
       console.error("Failed to send message:", err);
       toast.error("Message not sent", "Please try again.");
@@ -205,10 +209,15 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
       </header>
 
       <MessageList messages={messages} />
+      <TypingIndicator roomId={roomId} />
       <Composer
         value={draft}
         placeholder={`Message ${room.name ?? "the room"}`}
-        onChange={(v) => setDraft(roomId, v)}
+        onChange={(v) => {
+          setDraft(roomId, v);
+          if (v) notifyTyping(roomId, memberIds);
+          else stopTyping(roomId, memberIds);
+        }}
         onSend={handleSend}
       />
 

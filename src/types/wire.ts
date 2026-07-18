@@ -78,6 +78,15 @@ export type ChatMessageMessage = {
 // the app-level message switch): any traffic bumps a per-peer lastSeenAt, and
 // a peer silent past the liveness timeout is closed and marked offline. ---
 
+/** Ephemeral typing signal — never persisted, acked, or synced. `typing`
+ * flips true on keystrokes (throttled) and false on send / idle timeout. */
+export type TypingMessage = {
+  type: "typing";
+  roomId: string;
+  fromId: string;
+  typing: boolean;
+};
+
 export type PingMessage = { type: "ping"; ts: number };
 export type PongMessage = { type: "pong"; ts: number };
 
@@ -383,6 +392,7 @@ export type HavenMessage =
   | InviteAckMessage
   | RosterSyncMessage
   | ChatMessageMessage
+  | TypingMessage
   | PingMessage
   | PongMessage
   | MsgAckMessage
