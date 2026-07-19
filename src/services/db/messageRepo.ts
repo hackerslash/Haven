@@ -1,5 +1,6 @@
 import { getDb } from "./client";
 import type { Message } from "../../types/domain";
+import { humanizeMentions } from "../../lib/mentions";
 
 type MessageRow = {
   id: string;
@@ -231,6 +232,43 @@ export async function nextAuthorSeq(roomId: string, authorId: string): Promise<n
     [roomId, authorId],
   );
   return (rows[0]?.max_seq ?? 0) + 1;
+}
+
+/** Turns free-text input into a safe FTS5 MATCH expression: each
+ * whitespace-separated token is double-quoted (so FTS metacharacters like
+ * `"`, `(`, `*`, `AND` are treated as literals) with a trailing `*` for prefix
+ * matching. Returns null for an effectively-empty query. */
+export function toFtsQuery(input: string): string | null {
+  const tokens = input
+    .split(/\s+/)
+    .filter((t) => t.length > 0)
+    .map((t) => `"${t.replace(/"/g, '""')}"*`);
+  return tokens.length > 0 ? tokens.join(" ") : null;
+}
+
+export type SearchResult = { message: Message; snippet: string };
+
+/** Full-text search over message bodies. `snippet` wraps matched terms in
+ * char(1)/char(2) sentinels for the UI to render as <mark>; mention tokens are
+ * humanized to `@Name` (the sentinels survive the rewrite). */
+export async function searchMessages(
+  query: string,
+  opts?: { roomId?: string; limit?: number },
+): Promise<SearchResult[]> {
+  const match = toFtsQuery(query);
+  if (match === null) return [];
+  const db = await getDb();
+  const rows = await db.select<(MessageRow & { snippet: string })[]>(
+    `SELECT m.*, snippet(messages_fts, 0, char(1), char(2), '…', 12) AS snippet
+       FROM messages_fts JOIN messages m ON m.rowid = messages_fts.rowid
+      WHERE messages_fts MATCH $1 AND ($2 IS NULL OR m.room_id = $2)
+      ORDER BY rank LIMIT $3`,
+    [match, opts?.roomId ?? null, opts?.limit ?? 50],
+  );
+  return rows.map((row) => ({
+    message: fromRow(row),
+    snippet: humanizeMentions(row.snippet),
+  }));
 }
 
 export async function latestHlc(): Promise<string | null> {
