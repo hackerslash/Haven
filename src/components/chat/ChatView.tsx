@@ -35,6 +35,8 @@ export function ChatView({ contactId }: ChatViewProps) {
 
   const loadMessages = useChatStore((s) => s.loadMessages);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const editMessage = useChatStore((s) => s.editMessage);
+  const cancelEdit = useChatStore((s) => s.cancelEdit);
   const setDraft = useChatStore((s) => s.setDraft);
   const setActiveRoom = useRoomStore((s) => s.setActiveRoom);
   const toggleMute = useRoomStore((s) => s.toggleMute);
@@ -71,6 +73,7 @@ export function ChatView({ contactId }: ChatViewProps) {
   const draft = useChatStore((s) => (roomId ? s.draftByRoom[roomId] : undefined)) ?? "";
   const replyingTo = useChatStore((s) => (roomId ? s.replyingToByRoom[roomId] : null)) ?? null;
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
+  const editing = useChatStore((s) => (roomId ? s.editingByRoom[roomId] : null)) ?? null;
 
   // Re-render once a minute while offline so a "5m ago" label keeps advancing.
   const [, setTick] = useState(0);
@@ -84,6 +87,12 @@ export function ChatView({ contactId }: ChatViewProps) {
   function handleSend(file?: File) {
     if (!roomId) return;
     stopTyping(roomId, [contactId]);
+    if (editing) {
+      return editMessage(roomId, [contactId], editing.id, draft).catch((err) => {
+        console.error("Failed to edit message:", err);
+        toast.error("Edit not saved", "Please try again.");
+      });
+    }
     return sendMessage(roomId, [contactId], draft, file).catch((err) => {
       console.error("Failed to send message:", err);
       toast.error("Message not sent", "Please try again.");
@@ -148,6 +157,8 @@ export function ChatView({ contactId }: ChatViewProps) {
           }
         }
         onCancelReply={() => roomId && setReplyingTo(roomId, null)}
+        editing={!!editing}
+        onCancelEdit={() => roomId && cancelEdit(roomId)}
         onChange={(v) => {
           if (!roomId) return;
           setDraft(roomId, v);

@@ -31,11 +31,14 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
 
   const loadMessages = useChatStore((s) => s.loadMessages);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const editMessage = useChatStore((s) => s.editMessage);
+  const cancelEdit = useChatStore((s) => s.cancelEdit);
   const setDraft = useChatStore((s) => s.setDraft);
   const messages = useChatStore((s) => s.messagesByRoom[roomId]);
   const draft = useChatStore((s) => s.draftByRoom[roomId]) ?? "";
   const replyingTo = useChatStore((s) => s.replyingToByRoom[roomId]) ?? null;
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
+  const editing = useChatStore((s) => s.editingByRoom[roomId]) ?? null;
   const contactsById = useRosterStore((s) => s.contactsById);
 
   const callRoomId = useRoomCallStore((s) => s.roomId);
@@ -79,6 +82,12 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
       // Fall back to last known
     }
     stopTyping(roomId, currentMembers);
+    if (editing) {
+      return editMessage(roomId, currentMembers, editing.id, draft).catch((err) => {
+        console.error("Failed to edit message:", err);
+        toast.error("Edit not saved", "Please try again.");
+      });
+    }
     return sendMessage(roomId, currentMembers, draft, file).catch((err) => {
       console.error("Failed to send message:", err);
       toast.error("Message not sent", "Please try again.");
@@ -157,6 +166,8 @@ export function GroupRoomView({ roomId, onLeft }: GroupRoomViewProps) {
           }
         }
         onCancelReply={() => setReplyingTo(roomId, null)}
+        editing={!!editing}
+        onCancelEdit={() => cancelEdit(roomId)}
         onChange={(v) => {
           setDraft(roomId, v);
           if (v) notifyTyping(roomId, memberIds);

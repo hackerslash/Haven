@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, Check, CheckCheck, Clock, Download, MessageSquare, Paperclip, Reply, SmilePlus, X } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, Clock, Download, MessageSquare, Paperclip, Pencil, Reply, SmilePlus, Trash2, X } from "lucide-react";
 import type { DeliveryStatus, Message, Reaction } from "../../types/domain";
 import { useChatStore } from "../../stores/useChatStore";
 import { useIdentityStore } from "../../stores/useIdentityStore";
@@ -193,6 +193,7 @@ const PICKER_H = 384;
 
 function snippetOf(message: Message | undefined): string {
   if (!message) return "Original message unavailable";
+  if (message.deletedAt) return "Message deleted";
   return message.body
     ? humanizeMentions(message.body)
     : message.attachmentName || "Attachment";
@@ -215,6 +216,8 @@ type MessageRowProps = {
   hovered: boolean;
   onToggleReaction: (messageId: string, emoji: string) => void;
   onReply: (message: Message) => void;
+  onEdit: (message: Message) => void;
+  onDelete: (messageId: string) => void;
   onQuoteClick: (messageId: string) => void;
 };
 
@@ -233,9 +236,14 @@ const MessageRow = memo(function MessageRow({
   hovered,
   onToggleReaction,
   onReply,
+  onEdit,
+  onDelete,
   onQuoteClick,
 }: MessageRowProps) {
   const [pickerPos, setPickerPos] = useState<{ left: number; top: number } | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleted = message.deletedAt != null;
+  const edited = message.editedAt != null && !deleted;
 
   function openPicker(e: React.MouseEvent<HTMLButtonElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -310,7 +318,7 @@ const MessageRow = memo(function MessageRow({
               <span className="text-[11px] text-text-muted">{timeOf(message.sentAt)}</span>
             </div>
           )}
-          {message.replyToId && (
+          {message.replyToId && !deleted && (
             <button
               type="button"
               onClick={() => replyToMessage && onQuoteClick(replyToMessage.id)}
@@ -338,51 +346,115 @@ const MessageRow = memo(function MessageRow({
             <div
               className={cx(
                 "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
-                isOwn
-                  ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
-                  : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
+                deleted
+                  ? "rounded-2xl border border-border/40 bg-bg-tertiary/40 italic text-text-muted"
+                  : isOwn
+                    ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
+                    : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
               )}
             >
-              {message.body && (
-                <MarkdownRenderer
-                  content={message.body}
-                  isOwn={isOwn}
-                  resolveMention={nameOf}
-                  selfId={selfId}
-                />
+              {deleted ? (
+                "Message deleted"
+              ) : (
+                <>
+                  {message.body && (
+                    <MarkdownRenderer
+                      content={message.body}
+                      isOwn={isOwn}
+                      resolveMention={nameOf}
+                      selfId={selfId}
+                    />
+                  )}
+                  {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
+                </>
               )}
-              {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
             </div>
             <span
               className={cx(
                 "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
                 "transition-opacity",
-                hovered || pickerPos ? "opacity-100" : "opacity-0",
+                hovered || pickerPos || confirmingDelete ? "opacity-100" : "opacity-0",
               )}
             >
-              <button
-                type="button"
-                title="Add reaction"
-                aria-label="Add reaction"
-                onClick={openPicker}
-                className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
-              >
-                <SmilePlus size={14} />
-              </button>
-              <button
-                type="button"
-                title="Reply"
-                aria-label="Reply"
-                onClick={() => onReply(message)}
-                className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
-              >
-                <Reply size={14} />
-              </button>
+              {!deleted && (
+                <>
+                  <button
+                    type="button"
+                    title="Add reaction"
+                    aria-label="Add reaction"
+                    onClick={openPicker}
+                    className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                  >
+                    <SmilePlus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Reply"
+                    aria-label="Reply"
+                    onClick={() => onReply(message)}
+                    className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                  >
+                    <Reply size={14} />
+                  </button>
+                  {isOwn && message.contentType === "text" && (
+                    <button
+                      type="button"
+                      title="Edit"
+                      aria-label="Edit"
+                      onClick={() => onEdit(message)}
+                      className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                  {isOwn &&
+                    (confirmingDelete ? (
+                      <>
+                        <button
+                          type="button"
+                          title="Confirm delete"
+                          aria-label="Confirm delete"
+                          onClick={() => {
+                            setConfirmingDelete(false);
+                            onDelete(message.id);
+                          }}
+                          className="rounded p-1 text-danger hover:bg-danger/15 transition-colors"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Cancel"
+                          aria-label="Cancel delete"
+                          onClick={() => setConfirmingDelete(false)}
+                          className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Delete"
+                        aria-label="Delete"
+                        onClick={() => setConfirmingDelete(true)}
+                        className="rounded p-1 hover:bg-danger/15 hover:text-danger transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    ))}
+                </>
+              )}
               {timeOf(message.sentAt)}
-              {isOwn && <DeliveryTick status={message.deliveryStatus} readAt={message.readAt} />}
+              {edited && (
+                <span title={`Edited ${timeOf(message.editedAt!)}`}>(edited)</span>
+              )}
+              {isOwn && !deleted && (
+                <DeliveryTick status={message.deliveryStatus} readAt={message.readAt} />
+              )}
             </span>
           </div>
-          {pills.length > 0 && (
+          {pills.length > 0 && !deleted && (
             <div className={cx("mt-1 flex flex-wrap gap-1", isOwn && "justify-end")}>
               {pills.map((pill) => (
                 <button
@@ -440,6 +512,8 @@ export function MessageList({ messages, roomId, memberIds }: MessageListProps) {
   const reactionsByMessage = useChatStore((s) => (roomId ? s.reactionsByRoom[roomId] : undefined));
   const toggleReaction = useChatStore((s) => s.toggleReaction);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
+  const beginEdit = useChatStore((s) => s.beginEdit);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Delegated on the container: every mouseover recomputes which message is
@@ -586,6 +660,20 @@ export function MessageList({ messages, roomId, memberIds }: MessageListProps) {
     [roomId, setReplyingTo],
   );
 
+  const handleEdit = useCallback(
+    (message: Message) => {
+      if (roomId) beginEdit(roomId, message);
+    },
+    [roomId, beginEdit],
+  );
+
+  const handleDelete = useCallback(
+    (messageId: string) => {
+      if (roomId) void deleteMessage(roomId, memberIds ?? [], messageId);
+    },
+    [roomId, memberIds, deleteMessage],
+  );
+
   const handleQuoteClick = useCallback((messageId: string) => {
     document
       .getElementById(`msg-${messageId}`)
@@ -675,6 +763,8 @@ export function MessageList({ messages, roomId, memberIds }: MessageListProps) {
                 hovered={hoveredId === message.id}
                 onToggleReaction={handleToggleReaction}
                 onReply={handleReply}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
                 onQuoteClick={handleQuoteClick}
               />
             </Fragment>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bold, Code, Italic, Paperclip, Quote, Reply, SendHorizontal, Smile, Strikethrough, Plus, X } from "lucide-react";
+import { Bold, Code, Italic, Paperclip, Pencil, Quote, Reply, SendHorizontal, Smile, Strikethrough, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { IconButton } from "../ui/IconButton";
 import { MAX_FILE_SIZE } from "../../services/room/chatService";
@@ -15,6 +15,10 @@ type ComposerProps = {
   onSend: (file?: File) => void | Promise<unknown>;
   replyingTo?: { authorName: string; snippet: string } | null;
   onCancelReply?: () => void;
+  /** When set, the composer is editing an existing message: shows an edit
+   * banner, hides the attach button, and Escape cancels. */
+  editing?: boolean;
+  onCancelEdit?: () => void;
   /** Members mentionable in this room (excludes self). Enables @-autocomplete. */
   mentionCandidates?: MentionCandidate[];
 };
@@ -33,7 +37,7 @@ function detectMentionQuery(text: string, caret: number): { start: number; query
   return { start: caret - query.length - 1, query };
 }
 
-export function Composer({ value, placeholder, onChange, onSend, replyingTo, onCancelReply, mentionCandidates }: ComposerProps) {
+export function Composer({ value, placeholder, onChange, onSend, replyingTo, onCancelReply, editing, onCancelEdit, mentionCandidates }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -107,8 +111,9 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
       e.preventDefault();
       handleSend();
     }
-    if (e.key === "Escape" && replyingTo) {
-      onCancelReply?.();
+    if (e.key === "Escape") {
+      if (editing) onCancelEdit?.();
+      else if (replyingTo) onCancelReply?.();
     }
   }
 
@@ -205,6 +210,28 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
         )}
       </AnimatePresence>
 
+      {/* Edit Banner */}
+      <AnimatePresence>
+        {editing && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="mb-2.5 flex items-center gap-2 rounded-xl bg-warning/10 px-4 py-2 text-sm text-text-primary shadow-md border border-warning/40"
+          >
+            <Pencil size={16} className="shrink-0 text-warning" />
+            <span className="flex-1 text-xs text-text-muted">Editing message · Esc to cancel</span>
+            <button
+              onClick={onCancelEdit}
+              aria-label="Cancel edit"
+              className="rounded-full bg-black/10 p-1 text-text-muted transition-colors hover:bg-danger/20 hover:text-danger"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* File Attachment Badge */}
       <AnimatePresence>
         {selectedFile && (
@@ -274,15 +301,17 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
             }}
           />
 
-          {/* Plus / Attach Button */}
-          <button
-            type="button"
-            title="Attach file"
-            onClick={() => fileInputRef.current?.click()}
-            className="mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/5 text-text-muted hover:bg-accent hover:text-white transition-colors"
-          >
-            <Plus size={16} />
-          </button>
+          {/* Plus / Attach Button (hidden while editing — edits are text-only) */}
+          {!editing && (
+            <button
+              type="button"
+              title="Attach file"
+              onClick={() => fileInputRef.current?.click()}
+              className="mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/5 text-text-muted hover:bg-accent hover:text-white transition-colors"
+            >
+              <Plus size={16} />
+            </button>
+          )}
 
           {/* Text Area */}
           <textarea

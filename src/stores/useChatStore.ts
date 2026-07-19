@@ -17,12 +17,19 @@ type ChatState = {
   /** The message currently being edited, per room. Mutually exclusive with
    * replyingToByRoom (starting one clears the other). */
   editingByRoom: Record<string, Message | null>;
+  /** The draft stashed when an edit began, restored on cancel/commit so an
+   * in-progress message survives the edit detour. */
+  stashedDraftByRoom: Record<string, string>;
 
   loadMessages: (roomId: string) => Promise<void>;
   sendMessage: (roomId: string, memberIds: string[], body: string, file?: File) => Promise<void>;
   setDraft: (roomId: string, draft: string) => void;
   setReplyingTo: (roomId: string, message: Message | null) => void;
-  setEditing: (roomId: string, message: Message | null) => void;
+  /** Enters edit mode for a message: stashes the current draft and seeds the
+   * composer with the message body. */
+  beginEdit: (roomId: string, message: Message) => void;
+  /** Leaves edit mode, restoring the stashed draft. */
+  cancelEdit: (roomId: string) => void;
   /** Edits one of the local user's messages: re-signs, persists, broadcasts. */
   editMessage: (roomId: string, memberIds: string[], messageId: string, body: string) => Promise<void>;
   /** Deletes (tombstones) one of the local user's messages. */
@@ -83,6 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   reactionsByRoom: {},
   replyingToByRoom: {},
   editingByRoom: {},
+  stashedDraftByRoom: {},
 
   loadMessages: async (roomId) => {
     const [messages, reactions] = await Promise.all([
@@ -154,10 +162,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       editingByRoom: message ? { ...state.editingByRoom, [roomId]: null } : state.editingByRoom,
     })),
 
-  setEditing: (roomId, message) =>
+  beginEdit: (roomId, message) =>
     set((state) => ({
       editingByRoom: { ...state.editingByRoom, [roomId]: message },
-      replyingToByRoom: message ? { ...state.replyingToByRoom, [roomId]: null } : state.replyingToByRoom,
+      replyingToByRoom: { ...state.replyingToByRoom, [roomId]: null },
+      stashedDraftByRoom: { ...state.stashedDraftByRoom, [roomId]: state.draftByRoom[roomId] ?? "" },
+      draftByRoom: { ...state.draftByRoom, [roomId]: message.body ?? "" },
+    })),
+
+  cancelEdit: (roomId) =>
+    set((state) => ({
+      editingByRoom: { ...state.editingByRoom, [roomId]: null },
+      draftByRoom: { ...state.draftByRoom, [roomId]: state.stashedDraftByRoom[roomId] ?? "" },
     })),
 
   editMessage: async (roomId, memberIds, messageId, body) => {
@@ -165,9 +181,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!self) return;
     const updated = await chatService.sendEdit(self, roomId, memberIds, messageId, body.trim(), Date.now());
     if (updated) get().applyMessageUpdate(updated);
+    // Leave edit mode and restore the pre-edit draft.
     set((state) => ({
       editingByRoom: { ...state.editingByRoom, [roomId]: null },
-      draftByRoom: { ...state.draftByRoom, [roomId]: "" },
+      draftByRoom: { ...state.draftByRoom, [roomId]: state.stashedDraftByRoom[roomId] ?? "" },
     }));
   },
 
