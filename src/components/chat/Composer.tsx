@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Bold, Code, Italic, Paperclip, Pencil, Quote, Reply, SendHorizontal, Smile, Strikethrough, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { IconButton } from "../ui/IconButton";
@@ -13,7 +13,7 @@ type ComposerProps = {
   placeholder: string;
   onChange: (value: string) => void;
   onSend: (file?: File) => void | Promise<unknown>;
-  replyingTo?: { authorName: string; snippet: string } | null;
+  replyingTo?: { id: string; authorName: string; snippet: string } | null;
   onCancelReply?: () => void;
   /** When set, the composer is editing an existing message: shows an edit
    * banner, hides the attach button, and Escape cancels. */
@@ -37,7 +37,16 @@ function detectMentionQuery(text: string, caret: number): { start: number; query
   return { start: caret - query.length - 1, query };
 }
 
-export function Composer({ value, placeholder, onChange, onSend, replyingTo, onCancelReply, editing, onCancelEdit, mentionCandidates }: ComposerProps) {
+/** Lets a parent (the drag-and-drop zone around the whole chat window) hand
+ * a dropped file to the composer as if it had been picked via the file input. */
+export type ComposerHandle = {
+  acceptFile: (file: File) => void;
+};
+
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  { value, placeholder, onChange, onSend, replyingTo, onCancelReply, editing, onCancelEdit, mentionCandidates },
+  ref,
+) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -55,6 +64,19 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
   const mentionOpen = mentionMatches.length > 0;
   const activeMention = Math.min(mentionIndex, mentionMatches.length - 1);
 
+  const acceptFile = useCallback((file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(
+        "File too large",
+        `Attachments are limited to ${Math.round(MAX_FILE_SIZE / (1024 * 1024))} MB.`,
+      );
+      return;
+    }
+    setSelectedFile(file);
+  }, []);
+
+  useImperativeHandle(ref, () => ({ acceptFile }), [acceptFile]);
+
   function autoGrow() {
     const el = textareaRef.current;
     if (!el) return;
@@ -65,6 +87,14 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
   useEffect(() => {
     autoGrow();
   }, [value]);
+
+  // Picking "Reply" on a message should hand focus straight to the input —
+  // keyed on the message id (not the replyingTo object, which both callers
+  // rebuild every render) so this only fires when the target actually changes.
+  const replyId = replyingTo?.id;
+  useEffect(() => {
+    if (replyId) textareaRef.current?.focus();
+  }, [replyId]);
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     onChange(e.target.value);
@@ -287,16 +317,7 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) {
-                if (file.size > MAX_FILE_SIZE) {
-                  toast.error(
-                    "File too large",
-                    `Attachments are limited to ${Math.round(MAX_FILE_SIZE / (1024 * 1024))} MB.`,
-                  );
-                } else {
-                  setSelectedFile(file);
-                }
-              }
+              if (file) acceptFile(file);
               if (fileInputRef.current) fileInputRef.current.value = "";
             }}
           />
@@ -400,4 +421,4 @@ export function Composer({ value, placeholder, onChange, onSend, replyingTo, onC
       </div>
     </div>
   );
-}
+});

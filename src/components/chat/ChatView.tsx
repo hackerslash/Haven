@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Phone, Video } from "lucide-react";
 import { useIdentityStore } from "../../stores/useIdentityStore";
 import { useRosterStore } from "../../stores/useRosterStore";
@@ -7,7 +7,8 @@ import { useRoomStore } from "../../stores/useRoomStore";
 import { useCallStore } from "../../stores/useCallStore";
 import { dmRoomId } from "../../services/room/chatService";
 import { MessageList } from "./MessageList";
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
+import { DropZone } from "./DropZone";
 import { TypingIndicator } from "./TypingIndicator";
 import { notifyTyping, stopTyping } from "../../services/room/typingService";
 import { Avatar } from "../ui/Avatar";
@@ -47,6 +48,7 @@ export function ChatView({ contactId, jumpToMessageId, onJumpConsumed }: ChatVie
 
   const [roomId, setRoomId] = useState<string | null>(null);
   const muted = useRoomStore((s) => (roomId ? !!s.mutedByRoom[roomId] : false));
+  const composerRef = useRef<ComposerHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +118,7 @@ export function ChatView({ contactId, jumpToMessageId, onJumpConsumed }: ChatVie
       : PRESENCE_LABEL[presence];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <DropZone onFileDrop={(file) => composerRef.current?.acceptFile(file)}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <Avatar id={contactId} name={contact.displayName} size="sm" presence={presence} />
         <h1 className="text-sm font-semibold">{contact.displayName}</h1>
@@ -152,11 +154,13 @@ export function ChatView({ contactId, jumpToMessageId, onJumpConsumed }: ChatVie
       />
       <TypingIndicator roomId={roomId} />
       <Composer
+        ref={composerRef}
         value={draft}
         placeholder={`Message ${contact.displayName}`}
         mentionCandidates={[{ id: contactId, name: contact.displayName }]}
         replyingTo={
           replyingTo && {
+            id: replyingTo.id,
             authorName:
               replyingTo.authorId === self?.identityId
                 ? self.displayName
@@ -175,6 +179,6 @@ export function ChatView({ contactId, jumpToMessageId, onJumpConsumed }: ChatVie
         }}
         onSend={handleSend}
       />
-    </div>
+    </DropZone>
   );
 }
