@@ -9,14 +9,14 @@ lives locally in SQLite.
 ## Quickstart
 
 Download the latest installer from the
-[Releases page](https://github.com/hackerslash/Haven/releases/latest).
+[Releases page](https://github.com/hackerslash/colloquium/releases/latest).
 
 **macOS**
 1. Move `Colloquium.app` into `/Applications`.
 2. Run this once (the build isn't notarized, so without it Screen
    Recording/Camera/Mic permissions won't persist across relaunches):
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/hackerslash/Haven/main/scripts/fix-macos-permissions.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/hackerslash/colloquium/main/scripts/fix-macos-permissions.sh | bash
    ```
 3. Open Colloquium and grant permissions when prompted.
 

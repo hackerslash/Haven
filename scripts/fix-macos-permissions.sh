@@ -11,7 +11,7 @@
 # self-issued) certificate gives macOS a stable identity to bind the grant to.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hackerslash/Haven/main/scripts/fix-macos-permissions.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hackerslash/colloquium/main/scripts/fix-macos-permissions.sh | bash
 #   # or, for a non-default install location:
 #   curl -fsSL .../fix-macos-permissions.sh | bash -s -- /path/to/Colloquium.app
 set -euo pipefail

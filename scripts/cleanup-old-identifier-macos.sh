@@ -5,7 +5,7 @@
 # colloquiumapp-identified build.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hackerslash/Haven/main/scripts/cleanup-old-identifier-macos.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hackerslash/colloquium/main/scripts/cleanup-old-identifier-macos.sh | bash
 set -euo pipefail
 
 OLD_ID="havenapp"
