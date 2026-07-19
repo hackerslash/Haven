@@ -2,13 +2,13 @@ import Database from "@tauri-apps/plugin-sql";
 
 const DB_URL = "sqlite:colloquium.db";
 
-let dbPromise: Promise<Database> | null = null;
+// The keyed (SQLCipher) pool is built and injected Rust-side in `db::init`
+// during app setup, keyed by DB_URL. Database.get() returns a JS handle over
+// that already-open pool WITHOUT invoking `plugin:sql|load` — so the encryption
+// key never transits the webview. NEVER use Database.load() here: it would
+// build a second, unkeyed pool and overwrite the injected one in DbInstances.
+const dbPromise: Promise<Database> = Promise.resolve(Database.get(DB_URL));
 
-// Every repo awaits this same connection so migrations only run once and
-// queries never race the initial Database.load().
 export function getDb(): Promise<Database> {
-  if (!dbPromise) {
-    dbPromise = Database.load(DB_URL);
-  }
   return dbPromise;
 }
