@@ -343,47 +343,23 @@ const MessageRow = memo(function MessageRow({
             )}
             data-message-id={message.id}
           >
-            <div
-              className={cx(
-                "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
-                deleted
-                  ? "rounded-2xl border border-border/40 bg-bg-tertiary/40 italic text-text-muted"
-                  : isOwn
-                    ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
-                    : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
-              )}
-            >
-              {deleted ? (
-                "Message deleted"
-              ) : (
-                <>
-                  {message.body && (
-                    <MarkdownRenderer
-                      content={message.body}
-                      isOwn={isOwn}
-                      resolveMention={nameOf}
-                      selfId={selfId}
-                    />
-                  )}
-                  {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
-                </>
-              )}
-            </div>
-            <span
-              className={cx(
-                "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
-                "transition-opacity",
-                hovered || pickerPos || confirmingDelete ? "opacity-100" : "opacity-0",
-              )}
-            >
+            <div className="relative">
               {!deleted && (
-                <>
+                <div
+                  className={cx(
+                    "absolute -top-3 z-10 flex items-center gap-0.5 rounded-lg border border-border/60 bg-bg-elevated p-0.5 shadow-md transition-opacity",
+                    isOwn ? "right-1" : "left-1",
+                    hovered || pickerPos || confirmingDelete
+                      ? "opacity-100"
+                      : "pointer-events-none opacity-0",
+                  )}
+                >
                   <button
                     type="button"
                     title="Add reaction"
                     aria-label="Add reaction"
                     onClick={openPicker}
-                    className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                    className="rounded p-1 hover:bg-bg-tertiary hover:text-text-primary transition-colors"
                   >
                     <SmilePlus size={14} />
                   </button>
@@ -392,7 +368,7 @@ const MessageRow = memo(function MessageRow({
                     title="Reply"
                     aria-label="Reply"
                     onClick={() => onReply(message)}
-                    className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                    className="rounded p-1 hover:bg-bg-tertiary hover:text-text-primary transition-colors"
                   >
                     <Reply size={14} />
                   </button>
@@ -402,7 +378,7 @@ const MessageRow = memo(function MessageRow({
                       title="Edit"
                       aria-label="Edit"
                       onClick={() => onEdit(message)}
-                      className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                      className="rounded p-1 hover:bg-bg-tertiary hover:text-text-primary transition-colors"
                     >
                       <Pencil size={14} />
                     </button>
@@ -427,7 +403,7 @@ const MessageRow = memo(function MessageRow({
                           title="Cancel"
                           aria-label="Cancel delete"
                           onClick={() => setConfirmingDelete(false)}
-                          className="rounded p-1 hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                          className="rounded p-1 hover:bg-bg-tertiary hover:text-text-primary transition-colors"
                         >
                           <X size={14} />
                         </button>
@@ -443,8 +419,42 @@ const MessageRow = memo(function MessageRow({
                         <Trash2 size={14} />
                       </button>
                     ))}
-                </>
+                </div>
               )}
+              <div
+                className={cx(
+                  "select-text whitespace-pre-wrap break-words px-3.5 py-2 text-sm shadow-sm transition-shadow hover:shadow-md",
+                  deleted
+                    ? "rounded-2xl border border-border/40 bg-bg-tertiary/40 italic text-text-muted"
+                    : isOwn
+                      ? "bg-gradient-to-br from-accent to-accent-hover text-white rounded-l-2xl rounded-tr-2xl rounded-br-sm"
+                      : "bg-bg-elevated text-text-primary border border-border/50 rounded-r-2xl rounded-tl-2xl rounded-bl-sm",
+                )}
+              >
+                {deleted ? (
+                  "Message deleted"
+                ) : (
+                  <>
+                    {message.body && (
+                      <MarkdownRenderer
+                        content={message.body}
+                        isOwn={isOwn}
+                        resolveMention={nameOf}
+                        selfId={selfId}
+                      />
+                    )}
+                    {message.attachmentName && <MessageAttachment message={message} isOwn={isOwn} />}
+                  </>
+                )}
+              </div>
+            </div>
+            <span
+              className={cx(
+                "mb-0.5 flex shrink-0 items-center gap-1 text-[10px] text-text-muted",
+                "transition-opacity",
+                hovered || pickerPos || confirmingDelete ? "opacity-100" : "opacity-0",
+              )}
+            >
               {timeOf(message.sentAt)}
               {edited && (
                 <span title={`Edited ${timeOf(message.editedAt!)}`}>(edited)</span>
