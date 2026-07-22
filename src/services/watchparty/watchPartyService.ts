@@ -258,6 +258,7 @@ function syncTick() {
   if (!session || isController()) return;
   const snap = session.reducer.currentSnapshot();
   if (!snap) return;
+  applySnapshotTracks();
   pushPlaybackToStore();
   if (session.ready === false) return;
   if (snap.paused && !session.localPaused) void player.setPause(true);
@@ -286,17 +287,27 @@ function applySnapshotTracks() {
   if (!session || isController()) return;
   const snap = session.reducer.currentSnapshot();
   if (!snap) return;
+  // Commit the applied value only after the invoke resolves — if it rejects
+  // (e.g. a snapshot lands while the native player is still initializing), the
+  // cached value stays stale so the next tick/heartbeat retries instead of the
+  // diff-guard suppressing it forever.
   if (snap.audioTrackId !== session.ctrl.audioTrackId) {
-    session.ctrl.audioTrackId = snap.audioTrackId;
-    void player.setAudioTrack(snap.audioTrackId);
+    const target = snap.audioTrackId;
+    void player.setAudioTrack(target).then(() => {
+      if (session) session.ctrl.audioTrackId = target;
+    });
   }
   if (snap.subTrackId !== session.ctrl.subTrackId) {
-    session.ctrl.subTrackId = snap.subTrackId;
-    void player.setSubTrack(snap.subTrackId);
+    const target = snap.subTrackId;
+    void player.setSubTrack(target).then(() => {
+      if (session) session.ctrl.subTrackId = target;
+    });
   }
   if (snap.subDelaySec !== session.ctrl.subDelaySec) {
-    session.ctrl.subDelaySec = snap.subDelaySec;
-    void player.setSubDelay(snap.subDelaySec);
+    const target = snap.subDelaySec;
+    void player.setSubDelay(target).then(() => {
+      if (session) session.ctrl.subDelaySec = target;
+    });
   }
   session.ctrl.rate = snap.playbackRate;
 }

@@ -327,6 +327,7 @@ fn poll_loop(mpv: Arc<Mpv>, running: Arc<AtomicBool>, channel: Channel<WpEvent>)
     let mut last_duration = -1.0_f64;
     let mut last_paused: Option<bool> = None;
     let mut last_cache: Option<bool> = None;
+    let mut last_ready: Option<bool> = None;
     let mut last_eof = false;
     let mut last_tracks = String::new();
 
@@ -348,12 +349,14 @@ fn poll_loop(mpv: Arc<Mpv>, running: Arc<AtomicBool>, channel: Channel<WpEvent>)
         }
         let pfc = get_bool(&mpv, "paused-for-cache").unwrap_or(false);
         let cached = get_f64(&mpv, "demuxer-cache-duration").unwrap_or(0.0);
-        if last_cache != Some(pfc) {
+        let ready = !pfc && cached >= 0.5;
+        if last_cache != Some(pfc) || last_ready != Some(ready) {
             last_cache = Some(pfc);
+            last_ready = Some(ready);
             let _ = channel.send(WpEvent::Buffering {
                 paused_for_cache: pfc,
                 cached_sec: cached,
-                ready: !pfc && cached >= 0.5,
+                ready,
             });
         }
         let eof = get_bool(&mpv, "eof-reached").unwrap_or(false);
