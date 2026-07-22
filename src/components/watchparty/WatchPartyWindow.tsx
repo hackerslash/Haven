@@ -6,10 +6,9 @@ import {
   MicOff,
   Pause,
   Play,
-  Subtitles,
+  X,
   Video,
   VideoOff,
-  X,
 } from "lucide-react";
 import { useWatchPartyStore, selfIsController } from "../../stores/useWatchPartyStore";
 import { useRoomCallStore } from "../../stores/useRoomCallStore";
@@ -31,62 +30,32 @@ function fmt(sec: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+// Single video stage — pure HTML <video>, same on all platforms.
 function Stage() {
-  const mode = useWatchPartyStore((s) => s.mode);
   const streamUrl = useWatchPartyStore((s) => s.streamUrl);
   const buffering = useWatchPartyStore((s) => s.buffering);
-  const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (mode !== "native" || !stageRef.current) return;
-    const el = stageRef.current;
-    const push = () => {
-      const r = el.getBoundingClientRect();
-      player.setStageRect({
-        x: r.left,
-        y: r.top,
-        w: r.width,
-        h: r.height,
-        dpr: window.devicePixelRatio,
-      });
-    };
-    let raf = 0;
-    const schedule = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(push);
-    };
-    const ro = new ResizeObserver(schedule);
-    ro.observe(el);
-    window.addEventListener("resize", schedule);
-    schedule();
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", schedule);
-    };
-  }, [mode]);
-
-  useEffect(() => {
-    if (mode === "native" || !videoRef.current) return;
+    if (!videoRef.current) return;
     player.attachHtml(videoRef.current);
     useWatchPartyStore.getState()._setMode("html");
     if (streamUrl) void player.load(streamUrl);
-  }, [mode, streamUrl]);
+    return () => {
+      void player.teardown();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className={cx("relative flex-1 min-h-0", mode !== "native" && "bg-black")}>
-      {mode === "native" ? (
-        <div ref={stageRef} className="absolute inset-0" />
-      ) : (
-        <video
-          ref={videoRef}
-          className="absolute inset-0 h-full w-full bg-black"
-          playsInline
-        />
-      )}
+    <div className="relative flex-1 min-h-0 bg-black">
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full object-contain"
+        playsInline
+      />
       {buffering && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
         </div>
       )}
@@ -94,82 +63,6 @@ function Stage() {
         <div className="absolute inset-0 flex items-center justify-center text-text-muted">
           No stream set
         </div>
-      )}
-    </div>
-  );
-}
-
-function TrackMenus() {
-  const controller = selfIsController();
-  const tracks = useWatchPartyStore((s) => s.tracks);
-  const audioTrackId = useWatchPartyStore((s) => s.audioTrackId);
-  const subTrackId = useWatchPartyStore((s) => s.subTrackId);
-  const setAudioTrack = useWatchPartyStore((s) => s.setAudioTrack);
-  const setSubTrack = useWatchPartyStore((s) => s.setSubTrack);
-  const addSubtitle = useWatchPartyStore((s) => s.addSubtitle);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const audio = tracks.filter((t) => t.type === "audio");
-  const subs = tracks.filter((t) => t.type === "sub");
-
-  return (
-    <div className="flex items-center gap-2">
-      <select
-        aria-label="Audio track"
-        disabled={!controller}
-        value={String(audioTrackId)}
-        onChange={(e) => {
-          const v = e.target.value;
-          setAudioTrack(v === "auto" || v === "no" ? v : Number(v));
-        }}
-        className="rounded-md bg-bg-tertiary px-2 py-1 text-xs text-text-secondary disabled:opacity-50"
-      >
-        <option value="auto">Audio: auto</option>
-        {audio.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.title ?? t.lang ?? `Track ${t.id}`}
-          </option>
-        ))}
-      </select>
-
-      <select
-        aria-label="Subtitle track"
-        disabled={!controller}
-        value={String(subTrackId)}
-        onChange={(e) => {
-          const v = e.target.value;
-          setSubTrack(v === "no" ? "no" : Number(v));
-        }}
-        className="rounded-md bg-bg-tertiary px-2 py-1 text-xs text-text-secondary disabled:opacity-50"
-      >
-        <option value="no">Subtitles: off</option>
-        {subs.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.title ?? t.lang ?? `Sub ${t.id}`}
-          </option>
-        ))}
-      </select>
-
-      {controller && (
-        <>
-          <IconButton
-            icon={Subtitles}
-            label="Add subtitle file"
-            size="sm"
-            onClick={() => fileRef.current?.click()}
-          />
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".srt,.ass,.ssa,.vtt,.sub"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void addSubtitle(f);
-              e.target.value = "";
-            }}
-          />
-        </>
       )}
     </div>
   );
@@ -200,7 +93,7 @@ function CameraStrip() {
           icon={Video}
           onClick={() => roomId && void useRoomCallStore.getState().join(roomId)}
         >
-          Join with camera & mic
+          Join with camera &amp; mic
         </Button>
       </div>
     );
@@ -276,14 +169,7 @@ export function WatchPartyWindow() {
   const end = useWatchPartyStore((s) => s.end);
   const self = useIdentityStore((s) => s.self);
   const contactsById = useRosterStore((s) => s.contactsById);
-  const mode = useWatchPartyStore((s) => s.mode);
   const urlRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const on = active && mode === "native";
-    document.documentElement.classList.toggle("wp-native", on);
-    return () => document.documentElement.classList.remove("wp-native");
-  }, [active, mode]);
 
   if (!active) return null;
 
@@ -295,8 +181,9 @@ export function WatchPartyWindow() {
       : (contactsById[controllerId ?? ""]?.displayName ?? "Someone");
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/40 bg-bg-base px-4">
+    <div className="fixed inset-0 z-40 flex flex-col bg-bg-base">
+      {/* Header */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/40 px-4">
         <span className="text-sm font-semibold">Watch party</span>
         <span className="rounded-full bg-bg-tertiary px-2 py-0.5 text-xs text-text-muted">
           {members.length} watching
@@ -317,8 +204,10 @@ export function WatchPartyWindow() {
         </div>
       </header>
 
+      {/* Video stage */}
       <Stage />
 
+      {/* Controls */}
       <div className="flex shrink-0 flex-col gap-2 border-t border-border/40 bg-bg-primary px-4 py-3">
         {controller && (
           <div className="flex items-center gap-2">
@@ -326,7 +215,7 @@ export function WatchPartyWindow() {
               ref={urlRef}
               type="url"
               defaultValue={streamUrl ?? ""}
-              placeholder="https://…/movie.mkv"
+              placeholder="https://…/movie.mp4"
               className="min-w-0 flex-1 rounded-md bg-bg-tertiary px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted"
             />
             <Button
@@ -377,8 +266,6 @@ export function WatchPartyWindow() {
               </option>
             ))}
           </select>
-
-          <TrackMenus />
 
           {controller && members.length > 1 && (
             <select

@@ -396,10 +396,11 @@ export type RoomCallBeaconMessage = {
 };
 
 // --- Watch party: synchronized LOCAL playback of a shared media URL. Every
-// client plays the URL with its own libmpv (no re-broadcast → no quality loss
-// from source); only small control messages cross the wire. The controller is
-// the single authority (a logical star over the existing data channel — no
-// server, no relay process). Its snapshot is idempotent and last-write-wins by
+// client plays the URL independently using the browser's <video> element
+// (no re-broadcast → no quality loss from source); only small control
+// messages cross the wire. The controller is the single authority (a logical
+// star over the existing data channel — no server, no relay process). Its
+// snapshot is idempotent and last-write-wins by
 // (controlEpoch, monotonicSeq, controllerId), so out-of-order/duplicated
 // snapshots converge and any peer may re-broadcast the newest it has seen
 // (relay-like resilience for a peer that loses the direct link to the owner).
@@ -430,9 +431,9 @@ export type WatchPartyStateMessage = {
   paused: boolean;
   positionSec: number;
   playbackRate: number;
-  audioTrackId: number | "no" | "auto";
-  subTrackId: number | "no";
-  subDelaySec: number;
+  audioTrackId?: number | "no" | "auto";
+  subTrackId?: number | "no";
+  subDelaySec?: number;
   controllerClockMs: number;
 };
 

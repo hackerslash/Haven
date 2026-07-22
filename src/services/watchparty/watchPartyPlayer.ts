@@ -1,4 +1,6 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+// watchPartyPlayer.ts
+// Pure HTML <video> player — no libmpv, no native path, works identically
+// on macOS, Windows, and Linux without any extra installation.
 
 export type TrackInfo = {
   id: number;
@@ -19,7 +21,8 @@ export type WpEvent =
   | { kind: "eof" }
   | { kind: "error"; message: string };
 
-export type PlayerMode = "native" | "html" | "none";
+// "html" once a <video> element is attached, "none" before that.
+export type PlayerMode = "html" | "none";
 export type StageRect = { x: number; y: number; w: number; h: number; dpr: number };
 export type AudioTrackId = number | "no" | "auto";
 export type SubTrackId = number | "no";
@@ -28,10 +31,8 @@ type Listener = (e: WpEvent) => void;
 
 let mode: PlayerMode = "none";
 const listeners = new Set<Listener>();
-let nativeChannel: Channel<WpEvent> | null = null;
 let htmlVideo: HTMLVideoElement | null = null;
 let htmlDetach: (() => void) | null = null;
-let availableCache: boolean | null = null;
 
 function emit(e: WpEvent) {
   for (const l of listeners) l(e);
@@ -39,51 +40,11 @@ function emit(e: WpEvent) {
 
 export function onPlayerEvent(l: Listener): () => void {
   listeners.add(l);
-  return () => {
-    listeners.delete(l);
-  };
+  return () => listeners.delete(l);
 }
 
 export function playerMode(): PlayerMode {
   return mode;
-}
-
-export async function probeNativeAvailable(): Promise<boolean> {
-  if (availableCache !== null) return availableCache;
-  try {
-    availableCache = await invoke<boolean>("wp_player_available");
-  } catch {
-    availableCache = false;
-  }
-  return availableCache;
-}
-
-let op: Promise<unknown> = Promise.resolve();
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const run = op.then(fn, fn);
-  op = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
-
-export function initNative(): Promise<boolean> {
-  return serialize(async () => {
-    const ch = new Channel<WpEvent>();
-    ch.onmessage = (e) => emit(e);
-    try {
-      await invoke("wp_player_init", { channel: ch });
-      nativeChannel = ch;
-      mode = "native";
-      return true;
-    } catch (err) {
-      console.warn("[watchParty] native player init failed:", err);
-      nativeChannel = null;
-      mode = "none";
-      return false;
-    }
-  });
 }
 
 export function attachHtml(video: HTMLVideoElement): void {
@@ -91,6 +52,7 @@ export function attachHtml(video: HTMLVideoElement): void {
   htmlVideo = video;
   mode = "html";
   const v = video;
+
   const onTime = () => emit({ kind: "time", pos: v.currentTime, tsMs: performance.now() });
   const onDur = () =>
     emit({ kind: "duration", duration: Number.isFinite(v.duration) ? v.duration : 0 });
@@ -100,16 +62,21 @@ export function attachHtml(video: HTMLVideoElement): void {
     emit({ kind: "buffering", pausedForCache: true, cachedSec: 0, ready: false });
   const onPlaying = () =>
     emit({ kind: "buffering", pausedForCache: false, cachedSec: 0, ready: true });
+  const onCanPlay = () =>
+    emit({ kind: "buffering", pausedForCache: false, cachedSec: 0, ready: true });
   const onEnded = () => emit({ kind: "eof" });
   const onError = () => emit({ kind: "error", message: v.error?.message ?? "playback error" });
+
   v.addEventListener("timeupdate", onTime);
   v.addEventListener("durationchange", onDur);
   v.addEventListener("play", onPlay);
   v.addEventListener("pause", onPause);
   v.addEventListener("waiting", onWaiting);
   v.addEventListener("playing", onPlaying);
+  v.addEventListener("canplay", onCanPlay);
   v.addEventListener("ended", onEnded);
   v.addEventListener("error", onError);
+
   htmlDetach = () => {
     v.removeEventListener("timeupdate", onTime);
     v.removeEventListener("durationchange", onDur);
@@ -117,6 +84,7 @@ export function attachHtml(video: HTMLVideoElement): void {
     v.removeEventListener("pause", onPause);
     v.removeEventListener("waiting", onWaiting);
     v.removeEventListener("playing", onPlaying);
+    v.removeEventListener("canplay", onCanPlay);
     v.removeEventListener("ended", onEnded);
     v.removeEventListener("error", onError);
   };
@@ -128,85 +96,77 @@ function detachHtml() {
   htmlVideo = null;
 }
 
-export function load(url: string): Promise<void> {
-  return serialize(async () => {
-    if (mode === "native") {
-      await invoke("wp_player_load", { url });
-    } else if (mode === "html" && htmlVideo) {
-      htmlVideo.src = url;
-      htmlVideo.load();
-    }
-  });
+export async function load(url: string): Promise<void> {
+  if (htmlVideo) {
+    htmlVideo.src = url;
+    htmlVideo.load();
+  }
 }
 
 export async function setPause(paused: boolean): Promise<void> {
-  if (mode === "native") {
-    await invoke("wp_player_set_pause", { paused });
-  } else if (mode === "html" && htmlVideo) {
-    if (paused) htmlVideo.pause();
-    else await htmlVideo.play().catch(() => {});
+  if (!htmlVideo) return;
+  if (paused) {
+    htmlVideo.pause();
+  } else {
+    await htmlVideo.play().catch(() => {});
   }
 }
 
 export async function seek(sec: number): Promise<void> {
-  if (mode === "native") await invoke("wp_player_seek", { secs: sec });
-  else if (mode === "html" && htmlVideo) htmlVideo.currentTime = Math.max(0, sec);
+  if (htmlVideo) htmlVideo.currentTime = Math.max(0, sec);
 }
 
 export async function setSpeed(rate: number): Promise<void> {
-  if (mode === "native") await invoke("wp_player_set_speed", { x: rate });
-  else if (mode === "html" && htmlVideo) htmlVideo.playbackRate = rate;
+  if (htmlVideo) htmlVideo.playbackRate = rate;
 }
 
-export async function setAudioTrack(id: AudioTrackId): Promise<void> {
-  if (mode === "native") await invoke("wp_player_set_audio_track", { id });
-}
+// Audio/subtitle track switching via HTML is limited to what the browser
+// exposes. These are no-ops unless extended via hls.js / dash.js in future.
+export async function setAudioTrack(_id: AudioTrackId): Promise<void> {}
+export async function setSubTrack(_id: SubTrackId): Promise<void> {}
+export async function setSubDelay(_sec: number): Promise<void> {}
 
-export async function setSubTrack(id: SubTrackId): Promise<void> {
-  if (mode === "native") await invoke("wp_player_set_sub_track", { id });
-}
-
-export async function setSubDelay(sec: number): Promise<void> {
-  if (mode === "native") await invoke("wp_player_set_sub_delay", { secs: sec });
-}
-
+// Subtitle file upload: inject as a <track> element with a blob URL.
 export async function addSubtitle(name: string, bytes: Uint8Array): Promise<void> {
-  if (mode === "native") await invoke("wp_player_add_subtitle", { name, bytes: Array.from(bytes) });
+  if (!htmlVideo) return;
+  const blob = new Blob([bytes], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const track = document.createElement("track");
+  track.kind = "subtitles";
+  track.label = name;
+  track.src = url;
+  track.default = true;
+  htmlVideo.appendChild(track);
+  // Show the newly added track.
+  if (htmlVideo.textTracks.length > 0) {
+    htmlVideo.textTracks[htmlVideo.textTracks.length - 1].mode = "showing";
+  }
 }
 
+// HTML <video> doesn't expose structured track metadata the same way mpv did.
+// Return an empty list; the TrackMenus component gracefully hides when empty.
 export async function getTracks(): Promise<TrackInfo[]> {
-  if (mode === "native") return (await invoke<TrackInfo[]>("wp_player_get_tracks")) ?? [];
   return [];
 }
 
 export async function now(): Promise<{ pos: number; tsMs: number }> {
-  if (mode === "native") {
-    return await invoke<{ pos: number; tsMs: number }>("wp_player_now");
-  }
-  if (mode === "html" && htmlVideo) return { pos: htmlVideo.currentTime, tsMs: performance.now() };
-  return { pos: 0, tsMs: performance.now() };
+  return {
+    pos: htmlVideo?.currentTime ?? 0,
+    tsMs: performance.now(),
+  };
 }
 
-export function setStageRect(rect: StageRect): void {
-  if (mode === "native") void invoke("wp_player_set_rect", { rect }).catch(() => {});
-}
+// setStageRect is a no-op: the <video> element is positioned by CSS, no native
+// view overlay needed.
+export function setStageRect(_rect: StageRect): void {}
 
 export function teardown(): Promise<void> {
-  return serialize(async () => {
-    if (mode === "native") {
-      if (nativeChannel) nativeChannel.onmessage = () => {};
-      nativeChannel = null;
-      try {
-        await invoke("wp_player_teardown");
-      } catch {
-        // best effort
-      }
-    } else if (mode === "html" && htmlVideo) {
-      htmlVideo.pause();
-      htmlVideo.removeAttribute("src");
-      htmlVideo.load();
-    }
-    detachHtml();
-    mode = "none";
-  });
+  if (htmlVideo) {
+    htmlVideo.pause();
+    htmlVideo.removeAttribute("src");
+    htmlVideo.load();
+  }
+  detachHtml();
+  mode = "none";
+  return Promise.resolve();
 }

@@ -19,7 +19,7 @@ import {
   WatchPartyState,
 } from "./watchPartySync";
 import * as player from "./watchPartyPlayer";
-import type { AudioTrackId, SubTrackId, WpEvent } from "./watchPartyPlayer";
+import type { WpEvent } from "./watchPartyPlayer";
 import * as roomMembersRepo from "../db/roomMembersRepo";
 import { useWatchPartyStore } from "../../stores/useWatchPartyStore";
 
@@ -31,9 +31,6 @@ const PING_MS = 4_000;
 type Ctrl = {
   paused: boolean;
   rate: number;
-  audioTrackId: AudioTrackId;
-  subTrackId: SubTrackId;
-  subDelaySec: number;
 };
 
 type MemberInfo = { ready: boolean; bufferedSec: number; leaseExpiresAt: number };
@@ -119,9 +116,6 @@ function pushPlaybackToStore() {
     paused: isController() ? session.ctrl.paused : (session.reducer.currentSnapshot()?.paused ?? session.localPaused),
     positionSec: localPositionNow(),
     playbackRate: session.ctrl.rate,
-    audioTrackId: session.ctrl.audioTrackId,
-    subTrackId: session.ctrl.subTrackId,
-    subDelaySec: session.ctrl.subDelaySec,
   });
   store._setController(session.reducer.currentControllerId());
 }
@@ -159,7 +153,7 @@ function onPlayerEvent(e: WpEvent) {
       store._setBuffering(e.pausedForCache);
       break;
     case "tracks":
-      store._setTracks(e.tracks);
+      // HTML <video> doesn't expose structured track metadata; ignore.
       break;
     case "eof":
       store._setBuffering(false);
@@ -171,8 +165,8 @@ function onPlayerEvent(e: WpEvent) {
 }
 
 async function initPlayer(): Promise<void> {
-  const native = await player.probeNativeAvailable();
-  if (native) await player.initNative();
+  // HTML <video> mode is activated when the Stage component mounts and calls
+  // player.attachHtml(). Nothing to do here.
   useWatchPartyStore.getState()._setMode(player.playerMode());
 }
 
@@ -206,9 +200,6 @@ function broadcastState() {
     paused: session.ctrl.paused,
     positionSec: pos,
     playbackRate: session.ctrl.rate,
-    audioTrackId: session.ctrl.audioTrackId,
-    subTrackId: session.ctrl.subTrackId,
-    subDelaySec: session.ctrl.subDelaySec,
     controllerClockMs: ts,
   };
   broadcast(msg);
@@ -258,7 +249,6 @@ function syncTick() {
   if (!session || isController()) return;
   const snap = session.reducer.currentSnapshot();
   if (!snap) return;
-  applySnapshotTracks();
   pushPlaybackToStore();
   if (session.ready === false) return;
   if (snap.paused && !session.localPaused) void player.setPause(true);
@@ -283,37 +273,8 @@ function syncTick() {
   }
 }
 
-function applySnapshotTracks() {
-  if (!session || isController()) return;
-  const snap = session.reducer.currentSnapshot();
-  if (!snap) return;
-  // Commit the applied value only after the invoke resolves — if it rejects
-  // (e.g. a snapshot lands while the native player is still initializing), the
-  // cached value stays stale so the next tick/heartbeat retries instead of the
-  // diff-guard suppressing it forever.
-  if (snap.audioTrackId !== session.ctrl.audioTrackId) {
-    const target = snap.audioTrackId;
-    void player.setAudioTrack(target).then(() => {
-      if (session) session.ctrl.audioTrackId = target;
-    });
-  }
-  if (snap.subTrackId !== session.ctrl.subTrackId) {
-    const target = snap.subTrackId;
-    void player.setSubTrack(target).then(() => {
-      if (session) session.ctrl.subTrackId = target;
-    });
-  }
-  if (snap.subDelaySec !== session.ctrl.subDelaySec) {
-    const target = snap.subDelaySec;
-    void player.setSubDelay(target).then(() => {
-      if (session) session.ctrl.subDelaySec = target;
-    });
-  }
-  session.ctrl.rate = snap.playbackRate;
-}
-
 function defaultCtrl(): Ctrl {
-  return { paused: true, rate: 1, audioTrackId: "auto", subTrackId: "no", subDelaySec: 0 };
+  return { paused: true, rate: 1 };
 }
 
 function makeSession(self: Identity, roomId: string, streamUrl: string, memberIds: string[]): Session {
@@ -360,7 +321,6 @@ export async function startParty(self: Identity, roomId: string, streamUrl: stri
   broadcast(startMsg);
   startLoops();
   broadcastState();
-  refreshTracksSoon();
 }
 
 export async function joinParty(self: Identity, roomId: string): Promise<void> {
@@ -385,7 +345,6 @@ export async function joinParty(self: Identity, roomId: string): Promise<void> {
   if (streamUrl) await player.load(streamUrl);
   startLoops();
   broadcastMember(false);
-  refreshTracksSoon();
 }
 
 export function leaveParty(): void {
@@ -428,7 +387,6 @@ export async function setStreamUrl(url: string): Promise<void> {
   await player.load(url);
   broadcast(startMsg);
   broadcastState();
-  refreshTracksSoon();
 }
 
 export function togglePlay(): void {
@@ -462,30 +420,6 @@ export function setRate(rate: number): void {
   broadcastState();
 }
 
-export function setAudioTrack(id: AudioTrackId): void {
-  if (!session || !isController()) return;
-  session.ctrl.audioTrackId = id;
-  void player.setAudioTrack(id);
-  pushPlaybackToStore();
-  broadcastState();
-}
-
-export function setSubTrack(id: SubTrackId): void {
-  if (!session || !isController()) return;
-  session.ctrl.subTrackId = id;
-  void player.setSubTrack(id);
-  pushPlaybackToStore();
-  broadcastState();
-}
-
-export function setSubDelay(sec: number): void {
-  if (!session || !isController()) return;
-  session.ctrl.subDelaySec = sec;
-  void player.setSubDelay(sec);
-  pushPlaybackToStore();
-  broadcastState();
-}
-
 export async function addSubtitle(file: File): Promise<void> {
   if (!session || !isController()) return;
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -501,7 +435,6 @@ export async function addSubtitle(file: File): Promise<void> {
   };
   await player.addSubtitle(file.name, bytes);
   broadcast(msg);
-  refreshTracksSoon();
 }
 
 export function handControlTo(id: string): void {
@@ -520,14 +453,6 @@ export function handControlTo(id: string): void {
   pushPlaybackToStore();
 }
 
-function refreshTracksSoon() {
-  window.setTimeout(() => {
-    void player.getTracks().then((tracks) => {
-      if (session) useWatchPartyStore.getState()._setTracks(tracks);
-    });
-  }, 800);
-}
-
 export function handleStart(_self: Identity, msg: WatchPartyStartMessage): void {
   useWatchPartyStore.getState()._setAnnounced(msg.roomId, {
     partyId: msg.partyId,
@@ -542,7 +467,6 @@ export function handleStart(_self: Identity, msg: WatchPartyStartMessage): void 
       useWatchPartyStore.getState()._setStreamUrl(msg.streamUrl);
       if (!isController()) void player.load(msg.streamUrl);
       pushSessionToStore();
-      refreshTracksSoon();
     }
   }
 }
@@ -552,7 +476,6 @@ export function handleState(_self: Identity, msg: WatchPartyStateMessage): void 
   const changed = session.reducer.applyState(msg, monoNow());
   if (!changed) return;
   if (!isController()) {
-    applySnapshotTracks();
     pushPlaybackToStore();
   }
 }
@@ -574,7 +497,6 @@ export function handleSubtitle(_self: Identity, msg: WatchPartySubtitleMessage):
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   void player.addSubtitle(msg.name, bytes);
-  refreshTracksSoon();
 }
 
 export function handleMember(_self: Identity, msg: WatchPartyMemberMessage): void {

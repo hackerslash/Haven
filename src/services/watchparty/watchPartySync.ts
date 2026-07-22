@@ -37,9 +37,9 @@ export type PlaybackSnapshot = {
   paused: boolean;
   positionSec: number;
   playbackRate: number;
-  audioTrackId: number | "no" | "auto";
-  subTrackId: number | "no";
-  subDelaySec: number;
+  audioTrackId?: number | "no" | "auto";
+  subTrackId?: number | "no";
+  subDelaySec?: number;
   /** Controller's monotonic clock (ms) at the instant `positionSec` was true. */
   controllerClockMs: number;
 };
@@ -62,7 +62,7 @@ function snapshotOf(msg: WatchPartyStateMessage): PlaybackSnapshot {
     playbackRate: msg.playbackRate,
     audioTrackId: msg.audioTrackId,
     subTrackId: msg.subTrackId,
-    subDelaySec: msg.subDelaySec,
+    subDelaySec: msg.subDelaySec ?? 0,
     controllerClockMs: msg.controllerClockMs,
   };
 }

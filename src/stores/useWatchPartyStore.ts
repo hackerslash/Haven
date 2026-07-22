@@ -1,12 +1,19 @@
 import { create } from "zustand";
 import type { Identity } from "../types/domain";
-import type { AudioTrackId, PlayerMode, SubTrackId, TrackInfo } from "../services/watchparty/watchPartyPlayer";
+import type { PlayerMode } from "../services/watchparty/watchPartyPlayer";
 import * as watchPartyService from "../services/watchparty/watchPartyService";
 import { useIdentityStore } from "./useIdentityStore";
 import { toast } from "./useToastStore";
 
 export type WatchPartyMember = { id: string; ready: boolean; bufferedSec: number };
 export type AnnouncedParty = { partyId: string; ownerId: string; streamUrl: string };
+
+type PlaybackSlice = {
+  paused: boolean;
+  positionSec: number;
+  durationSec: number;
+  playbackRate: number;
+};
 
 type WatchPartyStoreState = {
   active: boolean;
@@ -22,10 +29,6 @@ type WatchPartyStoreState = {
   positionSec: number;
   durationSec: number;
   playbackRate: number;
-  audioTrackId: AudioTrackId;
-  subTrackId: SubTrackId;
-  subDelaySec: number;
-  tracks: TrackInfo[];
   buffering: boolean;
   members: WatchPartyMember[];
   error: string | null;
@@ -38,10 +41,6 @@ type WatchPartyStoreState = {
   togglePlay: () => void;
   seek: (sec: number) => void;
   setRate: (rate: number) => void;
-  setAudioTrack: (id: AudioTrackId) => void;
-  setSubTrack: (id: SubTrackId) => void;
-  setSubDelay: (sec: number) => void;
-  addSubtitle: (file: File) => Promise<void>;
   handControlTo: (id: string) => void;
 
   _setSession: (v: {
@@ -54,9 +53,7 @@ type WatchPartyStoreState = {
   _setMode: (mode: PlayerMode) => void;
   _setController: (id: string | null) => void;
   _setStreamUrl: (url: string) => void;
-  _setPlayback: (v: Partial<Pick<WatchPartyStoreState,
-    "paused" | "positionSec" | "durationSec" | "playbackRate" | "audioTrackId" | "subTrackId" | "subDelaySec">>) => void;
-  _setTracks: (tracks: TrackInfo[]) => void;
+  _setPlayback: (v: Partial<PlaybackSlice>) => void;
   _setBuffering: (buffering: boolean) => void;
   _setMembers: (members: WatchPartyMember[]) => void;
   _setError: (error: string | null) => void;
@@ -77,25 +74,32 @@ export function selfIsController(): boolean {
   return !!self && s.controllerId === self.identityId;
 }
 
-const INITIAL = {
+const INITIAL: PlaybackSlice & {
+  active: boolean;
+  roomId: null;
+  partyId: null;
+  streamUrl: null;
+  ownerId: null;
+  controllerId: null;
+  mode: PlayerMode;
+  buffering: boolean;
+  members: WatchPartyMember[];
+  error: null;
+} = {
   active: false,
   roomId: null,
   partyId: null,
   streamUrl: null,
   ownerId: null,
   controllerId: null,
-  mode: "none" as PlayerMode,
+  mode: "none",
   paused: true,
   positionSec: 0,
   durationSec: 0,
   playbackRate: 1,
-  audioTrackId: "auto" as AudioTrackId,
-  subTrackId: "no" as SubTrackId,
-  subDelaySec: 0,
-  tracks: [] as TrackInfo[],
   buffering: false,
-  members: [] as WatchPartyMember[],
-  error: null as string | null,
+  members: [],
+  error: null,
 };
 
 export const useWatchPartyStore = create<WatchPartyStoreState>((set) => ({
@@ -131,10 +135,6 @@ export const useWatchPartyStore = create<WatchPartyStoreState>((set) => ({
   togglePlay: () => watchPartyService.togglePlay(),
   seek: (sec) => watchPartyService.seek(sec),
   setRate: (rate) => watchPartyService.setRate(rate),
-  setAudioTrack: (id) => watchPartyService.setAudioTrack(id),
-  setSubTrack: (id) => watchPartyService.setSubTrack(id),
-  setSubDelay: (sec) => watchPartyService.setSubDelay(sec),
-  addSubtitle: (file) => watchPartyService.addSubtitle(file),
   handControlTo: (id) => watchPartyService.handControlTo(id),
 
   _setSession: (v) =>
@@ -151,7 +151,6 @@ export const useWatchPartyStore = create<WatchPartyStoreState>((set) => ({
   _setController: (id) => set({ controllerId: id }),
   _setStreamUrl: (url) => set({ streamUrl: url }),
   _setPlayback: (v) => set(v),
-  _setTracks: (tracks) => set({ tracks }),
   _setBuffering: (buffering) => set({ buffering }),
   _setMembers: (members) => set({ members }),
   _setError: (error) => set({ error }),
