@@ -35,8 +35,9 @@ fn provision_mpv() {
         }
     }
     panic!(
-        "libmpv is required but was not found and could not be installed automatically.\n\
-         Install it with:  brew install mpv\n\
+        "libmpv is required but was not found.\n\
+         If you have Homebrew:  brew install mpv\n\
+         If you don't:          install it from https://brew.sh, then run `brew install mpv`\n\
          (set HAVEN_SKIP_MPV_AUTOINSTALL=1 to skip the auto-install attempt.)"
     );
 }
