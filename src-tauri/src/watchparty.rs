@@ -78,11 +78,11 @@ struct Player {
     render_ctx: usize,
     #[allow(dead_code)]
     waker: Arc<Waker>,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     window: tauri::WebviewWindow,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     host_view: usize,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     backing_view: usize,
 }
 
@@ -129,6 +129,8 @@ fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Res
 
     #[cfg(target_os = "macos")]
     let (host_view, backing_view) = macos::embed(&window)?;
+    #[cfg(target_os = "windows")]
+    let (host_view, backing_view) = win::embed(&window)?;
 
     let mpv = Mpv::with_initializer(|init| {
         let _ = init.set_property("config", false);
@@ -159,18 +161,18 @@ fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Res
     let render_flag = render_running.clone();
     let render_waker = waker.clone();
     let ctx_usize = render_ctx as usize;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let render_window = window.clone();
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let render_host = host_view;
     let render_join = std::thread::spawn(move || {
         render_loop(
             ctx_usize,
             render_flag,
             render_waker,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             render_window,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             render_host,
         )
     });
@@ -184,14 +186,14 @@ fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Res
         render_join: Some(render_join),
         render_ctx: ctx_usize,
         waker,
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         window,
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         host_view,
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         backing_view,
     });
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = window;
     Ok(())
 }
@@ -227,8 +229,8 @@ fn render_loop(
     ctx_usize: usize,
     running: Arc<AtomicBool>,
     waker: Arc<Waker>,
-    #[cfg(target_os = "macos")] window: tauri::WebviewWindow,
-    #[cfg(target_os = "macos")] host: usize,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] window: tauri::WebviewWindow,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] host: usize,
 ) {
     use libmpv2_sys as sys;
     let ctx = ctx_usize as *mut sys::mpv_render_context;
@@ -252,6 +254,12 @@ fn render_loop(
         let stride: usize = (w as usize) * 4;
         let mut pixels: Vec<u32> = vec![0; (w as usize) * (h as usize)];
         let size_arr: [std::os::raw::c_int; 2] = [w, h];
+        // GDI's 32bpp BI_RGB DIBs are byte-order B,G,R,X in memory, so ask mpv
+        // for that layout directly on Windows instead of byte-swapping every
+        // frame after the fact. CoreGraphics on macOS wants R,G,B,X (rgb0).
+        #[cfg(target_os = "windows")]
+        let fmt = b"bgr0\0";
+        #[cfg(not(target_os = "windows"))]
         let fmt = b"rgb0\0";
         let stride_v: usize = stride;
         let mut rparams = [
@@ -279,7 +287,9 @@ fn render_loop(
         }
         #[cfg(target_os = "macos")]
         macos::present(&window, host, pixels, w, h);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        win::present(&window, host, pixels, w, h);
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let _ = pixels;
     }
 }
@@ -478,9 +488,11 @@ pub fn wp_player_set_rect(rect: Rect) -> Result<(), String> {
     if let Some(player) = guard.as_ref() {
         #[cfg(target_os = "macos")]
         macos::set_rect(&player.window, player.host_view, rect.x, rect.y, rect.w, rect.h, dpr);
+        #[cfg(target_os = "windows")]
+        win::set_rect(&player.window, player.host_view, rect.x, rect.y, rect.w, rect.h, dpr);
         player.waker.wake();
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = rect;
     Ok(())
 }
@@ -513,6 +525,8 @@ fn teardown_inner() {
         }
         #[cfg(target_os = "macos")]
         macos::remove(&player.window, player.host_view, player.backing_view);
+        #[cfg(target_os = "windows")]
+        win::remove(&player.window, player.host_view, player.backing_view);
     }
 }
 
@@ -685,6 +699,171 @@ mod macos {
             let backing = backing as *mut AnyObject;
             let _: () = msg_send![host, removeFromSuperview];
             let _: () = msg_send![backing, removeFromSuperview];
+        });
+    }
+}
+
+// Windows has no view-hierarchy equivalent of the macOS approach above: the
+// WebView2 control is a native child HWND, not a layer inside our own view
+// tree. Instead we create our own child HWND as a sibling of it, positioned
+// behind it in z-order, and blit decoded frames into it with GDI. This only
+// shows through because `transparent: true` in tauri.conf.json already makes
+// wry set WebView2's DefaultBackgroundColor to fully transparent (see
+// wry's webview2 backend) — a documented WebView2 pattern for compositing
+// web content over native Win32 content in the same top-level window.
+#[cfg(target_os = "windows")]
+mod win {
+    use std::ffi::c_void;
+    use std::sync::mpsc;
+    use std::sync::Once;
+    use std::time::Duration;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Graphics::Gdi::{
+        GetDC, GetStockObject, ReleaseDC, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER,
+        BI_RGB, BLACK_BRUSH, DIB_RGB_COLORS, HBRUSH, SRCCOPY,
+    };
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, SetWindowPos,
+        CS_HREDRAW, CS_VREDRAW, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_NOZORDER, WINDOW_EX_STYLE, WNDCLASSEXW, WS_CHILD, WS_VISIBLE,
+    };
+
+    const CLASS_NAME: PCWSTR = windows::core::w!("ColloquiumMpvHost");
+
+    unsafe extern "system" fn wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+
+    fn register_class_once() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| unsafe {
+            let hinstance = GetModuleHandleW(None).unwrap_or_default();
+            let wc = WNDCLASSEXW {
+                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(wndproc),
+                hInstance: hinstance.into(),
+                hbrBackground: HBRUSH(GetStockObject(BLACK_BRUSH).0),
+                lpszClassName: CLASS_NAME,
+                ..Default::default()
+            };
+            RegisterClassExW(&wc);
+        });
+    }
+
+    pub fn embed(window: &tauri::WebviewWindow) -> Result<(usize, usize), String> {
+        register_class_once();
+        let parent = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
+        let (tx, rx) = mpsc::channel::<usize>();
+        window
+            .run_on_main_thread(move || unsafe {
+                let parent = HWND(parent as *mut c_void);
+                let hinstance = GetModuleHandleW(PCWSTR::null()).ok().map(Into::into);
+                let host = CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    CLASS_NAME,
+                    PCWSTR::null(),
+                    WS_CHILD | WS_VISIBLE,
+                    0,
+                    0,
+                    1,
+                    1,
+                    Some(parent),
+                    None,
+                    hinstance,
+                    None,
+                )
+                .unwrap_or_default();
+                // Newly created child windows land on top of the z-order;
+                // push ours behind the WebView2 host so the (now-transparent)
+                // web content draws over it.
+                let _ = SetWindowPos(
+                    host,
+                    Some(HWND_BOTTOM),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+                let _ = tx.send(host.0 as usize);
+            })
+            .map_err(|e| e.to_string())?;
+        let host = rx
+            .recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "timed out embedding player view".to_string())?;
+        Ok((host, 0))
+    }
+
+    pub fn present(window: &tauri::WebviewWindow, host: usize, pixels: Vec<u32>, w: i32, h: i32) {
+        let _ = window.run_on_main_thread(move || unsafe {
+            let hwnd = HWND(host as *mut c_void);
+            let hdc = GetDC(Some(hwnd));
+            if hdc.is_invalid() {
+                return;
+            }
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: w,
+                    // Negative height selects a top-down DIB, matching mpv's
+                    // row order — no manual flip needed.
+                    biHeight: -h,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0 as u32,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            StretchDIBits(
+                hdc,
+                0,
+                0,
+                w,
+                h,
+                0,
+                0,
+                w,
+                h,
+                Some(pixels.as_ptr() as *const c_void),
+                &bmi,
+                DIB_RGB_COLORS,
+                SRCCOPY,
+            );
+            ReleaseDC(Some(hwnd), hdc);
+        });
+    }
+
+    pub fn set_rect(
+        window: &tauri::WebviewWindow,
+        host: usize,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        dpr: f64,
+    ) {
+        let _ = window.run_on_main_thread(move || unsafe {
+            let hwnd = HWND(host as *mut c_void);
+            let px = (x * dpr).round() as i32;
+            let py = (y * dpr).round() as i32;
+            let pw = (w * dpr).round() as i32;
+            let ph = (h * dpr).round() as i32;
+            let _ = SetWindowPos(hwnd, None, px, py, pw, ph, SWP_NOZORDER | SWP_NOACTIVATE);
+        });
+    }
+
+    pub fn remove(window: &tauri::WebviewWindow, host: usize, _backing: usize) {
+        let _ = window.run_on_main_thread(move || unsafe {
+            let _ = DestroyWindow(HWND(host as *mut c_void));
         });
     }
 }

@@ -75,8 +75,11 @@ fn provision_mpv() {
 
     // The 117 MB runtime DLL is not committed. Cache it in the vendor dir and
     // copy it next to the executable so `tauri dev` / `cargo run` can load it.
+    // The dev watcher lives on this same directory, so a rebuild it triggers
+    // mid-download can kill this process and leave a truncated file behind;
+    // treat anything under the expected size as absent and re-fetch.
     let dll_cache = vendor.join("libmpv-2.dll");
-    if !dll_cache.exists() {
+    if !is_complete_dll(&dll_cache) {
         fetch_windows_dll(&dll_cache);
     }
     let target_dir = PathBuf::from(env("OUT_DIR"))
@@ -89,6 +92,19 @@ fn provision_mpv() {
         println!("cargo:warning=failed to copy libmpv-2.dll next to the executable: {e}");
     }
     println!("cargo:rerun-if-changed={}", dll_cache.display());
+}
+
+// The real DLL is ~117 MB; anything much smaller is a truncated leftover
+// from an interrupted download/extraction (e.g. the dev watcher killing
+// this build partway through because it saw the vendor dir change).
+#[cfg(target_os = "windows")]
+const MPV_DLL_MIN_SIZE: u64 = 50_000_000;
+
+#[cfg(target_os = "windows")]
+fn is_complete_dll(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.len() >= MPV_DLL_MIN_SIZE)
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -117,24 +133,41 @@ fn fetch_windows_dll(dll_cache: &Path) {
         panic!("failed to download libmpv from {MPV_WIN_URL}");
     }
 
+    // Extract into a process-unique staging dir and only rename the result
+    // into place once it's verified complete. Extracting straight to
+    // `dll_cache` would let a killed/raced build (e.g. the dev watcher
+    // restarting mid-extraction because it saw this directory change) leave
+    // a truncated file at the path future builds trust as "already cached".
+    let staging = dir.join(format!(".mpv-extract-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).expect("failed to create mpv extraction staging dir");
+
     // Windows' bundled tar.exe (libarchive) reads 7z; extract just the DLL.
     let extracted = Command::new("tar")
         .arg("-xf")
         .arg(&archive)
         .arg("-C")
-        .arg(dir)
+        .arg(&staging)
         .arg("libmpv-2.dll")
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
     let _ = std::fs::remove_file(&archive);
-    if !extracted || !dll_cache.exists() {
+
+    let staged_dll = staging.join("libmpv-2.dll");
+    if !extracted || !is_complete_dll(&staged_dll) {
+        let _ = std::fs::remove_dir_all(&staging);
         panic!(
-            "failed to extract libmpv-2.dll from {}.\n\
+            "failed to extract a complete libmpv-2.dll from {}.\n\
              Extract it manually into that folder (e.g. with 7-Zip).",
             archive.display()
         );
     }
+    if let Err(e) = std::fs::rename(&staged_dll, dll_cache) {
+        let _ = std::fs::remove_dir_all(&staging);
+        panic!("failed to move extracted libmpv-2.dll into place: {e}");
+    }
+    let _ = std::fs::remove_dir_all(&staging);
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
