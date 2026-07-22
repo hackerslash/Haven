@@ -618,6 +618,7 @@ dependencies = [
  "hex",
  "keyring",
  "libmpv2",
+ "libmpv2-sys",
  "libsqlite3-sys",
  "objc2",
  "objc2-app-kit",

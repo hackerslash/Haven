@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -35,13 +35,46 @@ pub enum WpEvent {
     Buffering { paused_for_cache: bool, cached_sec: f64, ready: bool },
     Tracks { tracks: Vec<TrackInfo> },
     Eof,
+    #[allow(dead_code)]
     Error { message: String },
 }
 
+struct Waker {
+    lock: Mutex<bool>,
+    cv: Condvar,
+}
+
+impl Waker {
+    fn new() -> Self {
+        Self { lock: Mutex::new(false), cv: Condvar::new() }
+    }
+
+    fn wake(&self) {
+        let mut g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        *g = true;
+        self.cv.notify_all();
+    }
+
+    fn wait(&self, timeout: Duration) {
+        let g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let (mut g, _) = self.cv.wait_timeout(g, timeout).unwrap_or_else(|e| e.into_inner());
+        *g = false;
+    }
+}
+
+static TARGET_W: AtomicI32 = AtomicI32::new(0);
+static TARGET_H: AtomicI32 = AtomicI32::new(0);
+static RESIZED: AtomicBool = AtomicBool::new(false);
+
 struct Player {
     mpv: Arc<Mpv>,
-    running: Arc<AtomicBool>,
-    join: Option<JoinHandle<()>>,
+    poll_running: Arc<AtomicBool>,
+    poll_join: Option<JoinHandle<()>>,
+    render_running: Arc<AtomicBool>,
+    render_join: Option<JoinHandle<()>>,
+    render_ctx: usize,
+    #[allow(dead_code)]
+    waker: Arc<Waker>,
     #[cfg(target_os = "macos")]
     window: tauri::WebviewWindow,
     #[cfg(target_os = "macos")]
@@ -74,9 +107,20 @@ pub async fn wp_player_init(
         .and_then(|inner| inner)
 }
 
+extern "C" fn on_render_update(ctx: *mut std::ffi::c_void) {
+    if ctx.is_null() {
+        return;
+    }
+    let waker = unsafe { &*(ctx as *const Waker) };
+    waker.wake();
+}
+
 fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Result<(), String> {
     let _setup = SETUP.lock().unwrap_or_else(|e| e.into_inner());
     teardown_inner();
+    TARGET_W.store(0, Ordering::Relaxed);
+    TARGET_H.store(0, Ordering::Relaxed);
+    RESIZED.store(false, Ordering::Relaxed);
 
     #[cfg(target_os = "macos")]
     let host_view = macos::embed(&window)?;
@@ -87,27 +131,54 @@ fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Res
         let _ = init.set_property("osc", false);
         let _ = init.set_property("input-default-bindings", false);
         let _ = init.set_property("input-vo-keyboard", false);
+        let _ = init.set_property("vo", "libmpv");
         let _ = init.set_property("hr-seek", "yes");
         let _ = init.set_property("keep-open", "yes");
         let _ = init.set_property("hwdec", "auto-safe");
         let _ = init.set_property("cache", "yes");
-        #[cfg(target_os = "macos")]
-        let _ = init.set_property("wid", host_view as i64);
         Ok(())
     })
     .map_err(|e| format!("mpv init failed: {e}"))?;
 
     let mpv = Arc::new(mpv);
-    let running = Arc::new(AtomicBool::new(true));
+    let waker = Arc::new(Waker::new());
+
+    let render_ctx = create_render_context(&mpv, &waker)?;
+
+    let poll_running = Arc::new(AtomicBool::new(true));
     let poll_mpv = mpv.clone();
-    let poll_running = running.clone();
-    let join = std::thread::spawn(move || poll_loop(poll_mpv, poll_running, channel));
+    let poll_flag = poll_running.clone();
+    let poll_join = std::thread::spawn(move || poll_loop(poll_mpv, poll_flag, channel));
+
+    let render_running = Arc::new(AtomicBool::new(true));
+    let render_flag = render_running.clone();
+    let render_waker = waker.clone();
+    let ctx_usize = render_ctx as usize;
+    #[cfg(target_os = "macos")]
+    let render_window = window.clone();
+    #[cfg(target_os = "macos")]
+    let render_host = host_view;
+    let render_join = std::thread::spawn(move || {
+        render_loop(
+            ctx_usize,
+            render_flag,
+            render_waker,
+            #[cfg(target_os = "macos")]
+            render_window,
+            #[cfg(target_os = "macos")]
+            render_host,
+        )
+    });
 
     let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
     *guard = Some(Player {
         mpv,
-        running,
-        join: Some(join),
+        poll_running,
+        poll_join: Some(poll_join),
+        render_running,
+        render_join: Some(render_join),
+        render_ctx: ctx_usize,
+        waker,
         #[cfg(target_os = "macos")]
         window,
         #[cfg(target_os = "macos")]
@@ -116,6 +187,94 @@ fn init_blocking(window: tauri::WebviewWindow, channel: Channel<WpEvent>) -> Res
     #[cfg(not(target_os = "macos"))]
     let _ = window;
     Ok(())
+}
+
+fn create_render_context(
+    mpv: &Mpv,
+    waker: &Arc<Waker>,
+) -> Result<*mut libmpv2_sys::mpv_render_context, String> {
+    use libmpv2_sys as sys;
+    let api = sys::MPV_RENDER_API_TYPE_SW.as_ptr() as *mut std::ffi::c_void;
+    let mut params = [
+        sys::mpv_render_param {
+            type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
+            data: api,
+        },
+        sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+    ];
+    let mut ctx: *mut sys::mpv_render_context = std::ptr::null_mut();
+    let err = unsafe {
+        sys::mpv_render_context_create(&mut ctx, mpv.ctx.as_ptr(), params.as_mut_ptr())
+    };
+    if err < 0 || ctx.is_null() {
+        return Err(format!("mpv render context create failed: {err}"));
+    }
+    let waker_ptr = Arc::as_ptr(waker) as *mut std::ffi::c_void;
+    unsafe {
+        sys::mpv_render_context_set_update_callback(ctx, Some(on_render_update), waker_ptr);
+    }
+    Ok(ctx)
+}
+
+fn render_loop(
+    ctx_usize: usize,
+    running: Arc<AtomicBool>,
+    waker: Arc<Waker>,
+    #[cfg(target_os = "macos")] window: tauri::WebviewWindow,
+    #[cfg(target_os = "macos")] host: usize,
+) {
+    use libmpv2_sys as sys;
+    let ctx = ctx_usize as *mut sys::mpv_render_context;
+    let frame_flag = sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64;
+
+    while running.load(Ordering::Relaxed) {
+        waker.wait(Duration::from_millis(200));
+        if !running.load(Ordering::Relaxed) {
+            break;
+        }
+        let flags = unsafe { sys::mpv_render_context_update(ctx) };
+        let resized = RESIZED.swap(false, Ordering::Relaxed);
+        if flags & frame_flag == 0 && !resized {
+            continue;
+        }
+        let w = TARGET_W.load(Ordering::Relaxed);
+        let h = TARGET_H.load(Ordering::Relaxed);
+        if w <= 0 || h <= 0 {
+            continue;
+        }
+        let stride: usize = (w as usize) * 4;
+        let mut pixels: Vec<u32> = vec![0; (w as usize) * (h as usize)];
+        let size_arr: [std::os::raw::c_int; 2] = [w, h];
+        let fmt = b"rgb0\0";
+        let stride_v: usize = stride;
+        let mut rparams = [
+            sys::mpv_render_param {
+                type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_SIZE,
+                data: size_arr.as_ptr() as *mut std::ffi::c_void,
+            },
+            sys::mpv_render_param {
+                type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_FORMAT,
+                data: fmt.as_ptr() as *mut std::ffi::c_void,
+            },
+            sys::mpv_render_param {
+                type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_STRIDE,
+                data: &stride_v as *const usize as *mut std::ffi::c_void,
+            },
+            sys::mpv_render_param {
+                type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_POINTER,
+                data: pixels.as_mut_ptr() as *mut std::ffi::c_void,
+            },
+            sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+        ];
+        let err = unsafe { sys::mpv_render_context_render(ctx, rparams.as_mut_ptr()) };
+        if err < 0 {
+            continue;
+        }
+        #[cfg(target_os = "macos")]
+        macos::present(&window, host, pixels, w, h);
+        #[cfg(not(target_os = "macos"))]
+        let _ = pixels;
+    }
 }
 
 fn get_f64(mpv: &Mpv, name: &str) -> Option<f64> {
@@ -293,18 +452,23 @@ pub struct Rect {
     y: f64,
     w: f64,
     h: f64,
-    #[allow(dead_code)]
     dpr: f64,
 }
 
 #[tauri::command]
 pub fn wp_player_set_rect(rect: Rect) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let guard = STATE.lock().map_err(|_| "player poisoned".to_string())?;
-        if let Some(player) = guard.as_ref() {
-            macos::set_rect(&player.window, player.host_view, rect.x, rect.y, rect.w, rect.h);
-        }
+    let dpr = if rect.dpr > 0.0 { rect.dpr } else { 1.0 };
+    let pw = (rect.w * dpr).round() as i32;
+    let ph = (rect.h * dpr).round() as i32;
+    TARGET_W.store(pw.max(0), Ordering::Relaxed);
+    TARGET_H.store(ph.max(0), Ordering::Relaxed);
+    RESIZED.store(true, Ordering::Relaxed);
+
+    let guard = STATE.lock().map_err(|_| "player poisoned".to_string())?;
+    if let Some(player) = guard.as_ref() {
+        #[cfg(target_os = "macos")]
+        macos::set_rect(&player.window, player.host_view, rect.x, rect.y, rect.w, rect.h, dpr);
+        player.waker.wake();
     }
     #[cfg(not(target_os = "macos"))]
     let _ = rect;
@@ -321,8 +485,20 @@ pub fn wp_player_teardown() -> Result<(), String> {
 fn teardown_inner() {
     let player = STATE.lock().unwrap_or_else(|e| e.into_inner()).take();
     if let Some(mut player) = player {
-        player.running.store(false, Ordering::Relaxed);
-        if let Some(join) = player.join.take() {
+        player.render_running.store(false, Ordering::Relaxed);
+        player.waker.wake();
+        if let Some(join) = player.render_join.take() {
+            let _ = join.join();
+        }
+        if player.render_ctx != 0 {
+            unsafe {
+                libmpv2_sys::mpv_render_context_free(
+                    player.render_ctx as *mut libmpv2_sys::mpv_render_context,
+                );
+            }
+        }
+        player.poll_running.store(false, Ordering::Relaxed);
+        if let Some(join) = player.poll_join.take() {
             let _ = join.join();
         }
         #[cfg(target_os = "macos")]
@@ -336,8 +512,44 @@ mod macos {
     use objc2::{class, msg_send};
     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
     use objc2_foundation::NSString;
+    use std::ffi::c_void;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGColorSpaceCreateDeviceRGB() -> *mut c_void;
+        fn CGColorSpaceRelease(space: *mut c_void);
+        fn CGDataProviderCreateWithData(
+            info: *mut c_void,
+            data: *const c_void,
+            size: usize,
+            release: Option<extern "C" fn(*mut c_void, *const c_void, usize)>,
+        ) -> *mut c_void;
+        fn CGDataProviderRelease(provider: *mut c_void);
+        fn CGImageCreate(
+            width: usize,
+            height: usize,
+            bits_per_component: usize,
+            bits_per_pixel: usize,
+            bytes_per_row: usize,
+            space: *mut c_void,
+            bitmap_info: u32,
+            provider: *mut c_void,
+            decode: *const f64,
+            should_interpolate: bool,
+            intent: i32,
+        ) -> *mut c_void;
+        fn CGImageRelease(image: *mut c_void);
+    }
+
+    const K_CG_IMAGE_ALPHA_NONE_SKIP_LAST: u32 = 5;
+
+    extern "C" fn release_pixels(info: *mut c_void, _data: *const c_void, _size: usize) {
+        if !info.is_null() {
+            unsafe { drop(Box::from_raw(info as *mut Vec<u32>)) };
+        }
+    }
 
     unsafe fn set_transparent(webview: *mut AnyObject) {
         let no: *mut AnyObject = msg_send![class!(NSNumber), numberWithBool: false];
@@ -355,6 +567,14 @@ mod macos {
                 let host: *mut AnyObject = msg_send![class!(NSView), alloc];
                 let host: *mut AnyObject = msg_send![host, init];
                 let _: () = msg_send![host, setWantsLayer: true];
+                let layer: *mut AnyObject = msg_send![host, layer];
+                if !layer.is_null() {
+                    let black: *mut AnyObject = msg_send![class!(NSColor), blackColor];
+                    let cg: *mut AnyObject = msg_send![black, CGColor];
+                    let _: () = msg_send![layer, setBackgroundColor: cg];
+                    let gravity = NSString::from_str("resize");
+                    let _: () = msg_send![layer, setContentsGravity: &*gravity];
+                }
                 let bounds: CGRect = msg_send![superview, bounds];
                 let _: () = msg_send![host, setFrame: bounds];
                 let below: isize = -1;
@@ -367,7 +587,51 @@ mod macos {
             .map_err(|_| "timed out embedding player view".to_string())
     }
 
-    pub fn set_rect(window: &tauri::WebviewWindow, host: usize, x: f64, y: f64, w: f64, h: f64) {
+    pub fn present(window: &tauri::WebviewWindow, host: usize, pixels: Vec<u32>, w: i32, h: i32) {
+        let _ = window.run_on_main_thread(move || unsafe {
+            let host = host as *mut AnyObject;
+            let layer: *mut AnyObject = msg_send![host, layer];
+            if layer.is_null() {
+                return;
+            }
+            let stride = (w as usize) * 4;
+            let size = (w as usize) * (h as usize) * 4;
+            let boxed = Box::into_raw(Box::new(pixels));
+            let data = (*boxed).as_ptr() as *const c_void;
+            let provider =
+                CGDataProviderCreateWithData(boxed as *mut c_void, data, size, Some(release_pixels));
+            let space = CGColorSpaceCreateDeviceRGB();
+            let image = CGImageCreate(
+                w as usize,
+                h as usize,
+                8,
+                32,
+                stride,
+                space,
+                K_CG_IMAGE_ALPHA_NONE_SKIP_LAST,
+                provider,
+                std::ptr::null(),
+                false,
+                0,
+            );
+            if !image.is_null() {
+                let _: () = msg_send![layer, setContents: image as *mut AnyObject];
+            }
+            CGImageRelease(image);
+            CGDataProviderRelease(provider);
+            CGColorSpaceRelease(space);
+        });
+    }
+
+    pub fn set_rect(
+        window: &tauri::WebviewWindow,
+        host: usize,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        dpr: f64,
+    ) {
         let _ = window.run_on_main_thread(move || unsafe {
             let host = host as *mut AnyObject;
             let superview: *mut AnyObject = msg_send![host, superview];
@@ -381,6 +645,10 @@ mod macos {
                 size: CGSize { width: w, height: h },
             };
             let _: () = msg_send![host, setFrame: frame];
+            let layer: *mut AnyObject = msg_send![host, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![layer, setContentsScale: dpr];
+            }
         });
     }
 
