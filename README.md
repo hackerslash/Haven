@@ -1,7 +1,7 @@
 # Colloquium
 
 A premium, Discord-inspired peer-to-peer desktop app for persistent text chat
-and voice/video rooms — Windows, macOS, and Linux. Built with Tauri v2 + React
+and voice/video rooms — Windows and macOS. Built with Tauri v2 + React
 + TypeScript + Vite. No custom backend: WebRTC signaling goes through the free
 PeerJS cloud broker with a hosted TURN relay for NAT traversal, and all data
 lives locally in SQLite.
@@ -23,11 +23,6 @@ Download the latest installer from the
 **Windows**
 Run the downloaded `.exe`/`.msi` installer, then launch Colloquium from the Start
 menu.
-
-**Linux**
-Install the `.deb`, `.rpm`, or `.AppImage` for your distro. Colloquium stores its
-identity key via the Secret Service D-Bus API, so a keyring provider (GNOME
-Keyring, KWallet, etc.) must be running.
 
 ## Features
 
